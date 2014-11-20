@@ -30,8 +30,8 @@ Kernel configured for up to 4 processors.
 Processor type: x86_64h (Intel x86-64h Haswell)
 Processors active: 0 1 2 3
 Primary memory available: 4.00 gigabytes
-Default processor set: 209 tasks, 903 threads, 4 processors
-Load average: 1.35, Mach factor: 2.64
+Default processor set: 219 tasks, 1056 threads, 4 processors
+Load average: 5.07, Mach factor: 1.36
 /bin/machine           = unknown
 /usr/bin/oslevel       = unknown
 /bin/universe          = unknown
@@ -333,7 +333,7 @@ configure:5124: checking for library containing clock_gettime
 configure:5155: gcc -o conftest -g -O2   conftest.c  >&5
 Undefined symbols for architecture x86_64:
   "_clock_gettime", referenced from:
-      _main in conftest-e49dc2.o
+      _main in conftest-863583.o
 ld: symbol(s) not found for architecture x86_64
 clang: error: linker command failed with exit code 1 (use -v to see invocation)
 configure:5155: $? = 1
@@ -470,7 +470,7 @@ configure:5410: checking for library containing umem_cache_create
 configure:5441: gcc -o conftest -g -O2 -I/usr/local/include  -L/usr/local/lib  -Wl,-rpath,/usr/local/lib conftest.c -levent  >&5
 Undefined symbols for architecture x86_64:
   "_umem_cache_create", referenced from:
-      _main in conftest-3edb76.o
+      _main in conftest-654c78.o
 ld: symbol(s) not found for architecture x86_64
 clang: error: linker command failed with exit code 1 (use -v to see invocation)
 configure:5441: $? = 1
@@ -557,7 +557,7 @@ configure:5466: checking for library containing gethugepagesizes
 configure:5497: gcc -o conftest -g -O2 -I/usr/local/include  -L/usr/local/lib  -Wl,-rpath,/usr/local/lib conftest.c -levent  >&5
 Undefined symbols for architecture x86_64:
   "_gethugepagesizes", referenced from:
-      _main in conftest-aa50c5.o
+      _main in conftest-50c955.o
 ld: symbol(s) not found for architecture x86_64
 clang: error: linker command failed with exit code 1 (use -v to see invocation)
 configure:5497: $? = 1
@@ -806,7 +806,7 @@ configure:6049: checking for getpagesizes
 configure:6049: gcc -o conftest -g -O2 -I/usr/local/include  -L/usr/local/lib  -Wl,-rpath,/usr/local/lib conftest.c -levent  >&5
 Undefined symbols for architecture x86_64:
   "_getpagesizes", referenced from:
-      _main in conftest-3828f2.o
+      _main in conftest-44fab7.o
 ld: symbol(s) not found for architecture x86_64
 clang: error: linker command failed with exit code 1 (use -v to see invocation)
 configure:6049: $? = 1
@@ -882,7 +882,7 @@ configure:6060: checking for memcntl
 configure:6060: gcc -o conftest -g -O2 -I/usr/local/include  -L/usr/local/lib  -Wl,-rpath,/usr/local/lib conftest.c -levent  >&5
 Undefined symbols for architecture x86_64:
   "_memcntl", referenced from:
-      _main in conftest-78ec0f.o
+      _main in conftest-11e750.o
 ld: symbol(s) not found for architecture x86_64
 clang: error: linker command failed with exit code 1 (use -v to see invocation)
 configure:6060: $? = 1
@@ -962,7 +962,7 @@ configure:6082: checking for clock_gettime
 configure:6082: gcc -o conftest -g -O2 -I/usr/local/include  -L/usr/local/lib  -Wl,-rpath,/usr/local/lib conftest.c -levent  >&5
 Undefined symbols for architecture x86_64:
   "_clock_gettime", referenced from:
-      _main in conftest-003f0e.o
+      _main in conftest-04a2ff.o
 ld: symbol(s) not found for architecture x86_64
 clang: error: linker command failed with exit code 1 (use -v to see invocation)
 configure:6082: $? = 1
@@ -1039,7 +1039,7 @@ configure:6093: checking for accept4
 configure:6093: gcc -o conftest -g -O2 -I/usr/local/include  -L/usr/local/lib  -Wl,-rpath,/usr/local/lib conftest.c -levent  >&5
 Undefined symbols for architecture x86_64:
   "_accept4", referenced from:
-      _main in conftest-d9ec6e.o
+      _main in conftest-0165ec.o
 ld: symbol(s) not found for architecture x86_64
 clang: error: linker command failed with exit code 1 (use -v to see invocation)
 configure:6093: $? = 1
@@ -1126,7 +1126,7 @@ configure:6209: checking for setppriv
 configure:6209: gcc -o conftest -g -O2 -I/usr/local/include  -L/usr/local/lib  -Wl,-rpath,/usr/local/lib conftest.c -levent  >&5
 Undefined symbols for architecture x86_64:
   "_setppriv", referenced from:
-      _main in conftest-d3b216.o
+      _main in conftest-a43e68.o
 ld: symbol(s) not found for architecture x86_64
 clang: error: linker command failed with exit code 1 (use -v to see invocation)
 configure:6209: $? = 1
@@ -1340,6 +1340,7 @@ on sonny-macbook.local
 config.status:894: creating Makefile
 config.status:894: creating doc/Makefile
 config.status:894: creating config.h
+config.status:1066: config.h is unchanged
 config.status:1114: executing depfiles commands
 
 ## ---------------- ##
@@ -1424,14 +1425,14 @@ am_cv_CC_dependencies_compiler_type=gcc3
 ## Output variables. ##
 ## ----------------- ##
 
-ACLOCAL='${SHELL} /Users/smanurung/Dropbox/TA/server/memcached-1.4.20/missing --run aclocal-1.11'
+ACLOCAL='${SHELL} /Users/smanurung/Dropbox/TA/memcached-transaction/missing --run aclocal-1.11'
 AMDEPBACKSLASH='\'
 AMDEP_FALSE='#'
 AMDEP_TRUE=''
-AMTAR='${SHELL} /Users/smanurung/Dropbox/TA/server/memcached-1.4.20/missing --run tar'
-AUTOCONF='${SHELL} /Users/smanurung/Dropbox/TA/server/memcached-1.4.20/missing --run autoconf'
-AUTOHEADER='${SHELL} /Users/smanurung/Dropbox/TA/server/memcached-1.4.20/missing --run autoheader'
-AUTOMAKE='${SHELL} /Users/smanurung/Dropbox/TA/server/memcached-1.4.20/missing --run automake-1.11'
+AMTAR='${SHELL} /Users/smanurung/Dropbox/TA/memcached-transaction/missing --run tar'
+AUTOCONF='${SHELL} /Users/smanurung/Dropbox/TA/memcached-transaction/missing --run autoconf'
+AUTOHEADER='${SHELL} /Users/smanurung/Dropbox/TA/memcached-transaction/missing --run autoheader'
+AUTOMAKE='${SHELL} /Users/smanurung/Dropbox/TA/memcached-transaction/missing --run automake-1.11'
 AWK='awk'
 BUILD_CACHE_FALSE='#'
 BUILD_CACHE_TRUE=''
@@ -1470,7 +1471,7 @@ LDFLAGS='-L/usr/local/lib  -Wl,-rpath,/usr/local/lib'
 LIBOBJS=''
 LIBS='-levent '
 LTLIBOBJS=''
-MAKEINFO='${SHELL} /Users/smanurung/Dropbox/TA/server/memcached-1.4.20/missing --run makeinfo'
+MAKEINFO='${SHELL} /Users/smanurung/Dropbox/TA/memcached-transaction/missing --run makeinfo'
 MKDIR_P='./install-sh -c -d'
 OBJEXT='o'
 PACKAGE='memcached'
@@ -1520,7 +1521,7 @@ host_vendor='apple'
 htmldir='${docdir}'
 includedir='${prefix}/include'
 infodir='${datarootdir}/info'
-install_sh='${SHELL} /Users/smanurung/Dropbox/TA/server/memcached-1.4.20/install-sh'
+install_sh='${SHELL} /Users/smanurung/Dropbox/TA/memcached-transaction/install-sh'
 libdir='${exec_prefix}/lib'
 libexecdir='${exec_prefix}/libexec'
 localedir='${datarootdir}/locale'

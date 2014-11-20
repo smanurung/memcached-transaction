@@ -3723,9 +3723,27 @@ static void process_command(conn *c, char *command) {
       printf("curT.id = %d\n",curT.id);
 
       char *k = tokens[KEY_TOKEN].value;
+
+      /*
+      token_t *key_token = &tokens[KEY_TOKEN];
+      item *it = item_get(key_token->value, key_token->length);
+      printf("ITEM_key(it): %s\nITEM_data(it): %s\n", ITEM_key(it), ITEM_data(it));
+      */
+
       if(is_member(curT.ws, nelems(curT.ws), k)) {
         //write to copies
       } else {
+        //get item
+        kv_type temp;
+        temp.key = tokens[KEY_TOKEN].value;
+        token_t *key_token = &tokens[KEY_TOKEN];
+        temp.value = ITEM_data(item_get(key_token->value, key_token->length));
+
+        //insert to copies array
+
+        //insert to write set
+
+        //write to the copies
 
       }
 
