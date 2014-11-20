@@ -3708,6 +3708,9 @@ static void process_command(conn *c, char *command) {
       T[tnc].id = new_id;
       T[tnc].start_tn = tnc;
       T[tnc].finish_tn = 0;
+      T[tnc].rs_avail = 0;
+      T[tnc].ws_avail = 0;
+      T[tnc].copies_avail = 0;
 
       printf("transaction_id %d assigned\n", T[tnc].id);
 
@@ -3723,14 +3726,23 @@ static void process_command(conn *c, char *command) {
       printf("curT.id = %d\n",curT.id);
 
       char *k = tokens[KEY_TOKEN].value;
+      //int VALUE_TOKEN = 5; //asumsi
+      //printf("key: %s\nvalue: %s\n", tokens[KEY_TOKEN].value, );
 
-      /*
+/*
+      int i;
+      for(i = 0; i < ntokens - 1; ++i) {
+        printf("token[%d]: %s\n", i, tokens[i].value);
+      }
+*/
+
+/*
       token_t *key_token = &tokens[KEY_TOKEN];
       item *it = item_get(key_token->value, key_token->length);
       printf("ITEM_key(it): %s\nITEM_data(it): %s\n", ITEM_key(it), ITEM_data(it));
-      */
+*/
 
-      if(is_member(curT.ws, nelems(curT.ws), k)) {
+      if(get_idx(curT.ws, nelems(curT.ws), k)) {
         //write to copies
       } else {
         //get item
@@ -3739,12 +3751,14 @@ static void process_command(conn *c, char *command) {
         token_t *key_token = &tokens[KEY_TOKEN];
         temp.value = ITEM_data(item_get(key_token->value, key_token->length));
 
-        //insert to copies array
-
         //insert to write set
+        curT.ws[curT.ws_avail] = temp;
+        curT.ws_avail += 1;
 
-        //write to the copies
-
+        //insert to copies array
+        //temp.value =
+        curT.copies[curT.copies_avail] = temp;
+        curT.copies_avail += 1;
       }
 
       //process_update_command(c, tokens, ntokens, comm, false);
@@ -3765,14 +3779,14 @@ kv_type copy(char *key) {
 }
 */
 
-bool is_member(kv_type s[], int size, char *k) {
+int get_idx(kv_type s[], int size, char *k) {
   int j;
   for(j = 0; j < size; ++j) {
-    if(strcmp(s[j].key, k) == 0) {
-      return true;
+    if((s[j].key != NULL) && ((strcmp(s[j].key, k) == 0))) {
+      return j;
     }
   }
-  return false;
+  return 0;
 }
 
 void print_transaction(transaction_type T[]) {

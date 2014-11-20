@@ -619,14 +619,20 @@ typedef struct {
 typedef struct {
   int id; //use sfd from connection
   size_t tn;
+
   kv_type rs[20];
   kv_type ws[20];
   kv_type copies[20];
+
+  int rs_avail;
+  int ws_avail;
+  int copies_avail;
+
   int start_tn;
   int finish_tn;
 } transaction_type;
 
 transaction_type get_transaction(transaction_type T[], int id);
 void print_transaction(transaction_type T[]);
-bool is_member(kv_type s[], int size, char *k);
+int get_idx(kv_type s[], int size, char *k);
 kv_type copy(char *key);
