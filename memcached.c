@@ -3750,18 +3750,24 @@ static void process_command(conn *c, char *command) {
         temp.key = tokens[KEY_TOKEN].value;
         token_t *key_token = &tokens[KEY_TOKEN];
         temp.value = ITEM_data(item_get(key_token->value, key_token->length));
+        //printf("ITEM_data(it) dulu: %s\n", temp.value);
 
         //insert to write set
         curT.ws[curT.ws_avail] = temp;
         curT.ws_avail += 1;
 
         //insert to copies array
-        //temp.value =
+        printf("c->rcurr: %s\nc->rbytes: %d\nc->req_value: %s\n", c->rcurr, c->rbytes, c->req_value);
+        char * token = strtok(c->req_value, "\n");
+        token = strtok(NULL, "\n");
+        free(c->req_value);
+        //printf("token: %s\n",token);
+        temp.value = token;
         curT.copies[curT.copies_avail] = temp;
         curT.copies_avail += 1;
       }
 
-      //process_update_command(c, tokens, ntokens, comm, false);
+      process_update_command(c, tokens, ntokens, comm, false);
     } else if(strcmp(tokens[COMMAND_TOKEN].value, "end") == 0) {
       printf("command 'end' dikenali\n");
 
@@ -3809,8 +3815,9 @@ transaction_type get_transaction(transaction_type *T, int id) {
  * if we have a complete line in the buffer, process it.
  */
 static int try_read_command(conn *c) {
-	printf("ke try_read_command\n");
-  printf("%s\n", c->rcurr);
+	printf("ke try_read_command\nc->curr: %s\nc->ritem: %s\n", c->rcurr, c->ritem);
+  c->req_value = (char *)malloc(50);
+  strcpy(c->req_value,c->rcurr);
 
     assert(c != NULL);
     assert(c->rcurr <= (c->rbuf + c->rsize));
