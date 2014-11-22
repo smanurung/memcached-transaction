@@ -3502,6 +3502,7 @@ static void process_command(conn *c, char *command) {
                 (strcmp(tokens[COMMAND_TOKEN].value, "prepend") == 0 && (comm = NREAD_PREPEND)) ||
                 (strcmp(tokens[COMMAND_TOKEN].value, "append") == 0 && (comm = NREAD_APPEND)) )) {
 
+        printf("c->rcurr: %s\n", c->rcurr);
         process_update_command(c, tokens, ntokens, comm, false);
 
     } else if ((ntokens == 7 || ntokens == 8) && (strcmp(tokens[COMMAND_TOKEN].value, "cas") == 0 && (comm = NREAD_CAS))) {
@@ -3714,8 +3715,9 @@ static void process_command(conn *c, char *command) {
 
       printf("transaction_id %d assigned\n", T[tnc].id);
 
-      comm = NREAD_SET;
-      process_update_command(c, tokens, ntokens, comm, false);
+      return;
+      //comm = NREAD_SET;
+      //process_update_command(c, tokens, ntokens, comm, false);
 
     } else if(((ntokens == 6) || (ntokens == 7)) && (strcmp(tokens[COMMAND_TOKEN].value, "tset") == 0)) {
       printf("'tset' dikenali\n");
@@ -3726,28 +3728,23 @@ static void process_command(conn *c, char *command) {
       printf("curT.id = %d\n",curT.id);
 
       char *k = tokens[KEY_TOKEN].value;
-      //int VALUE_TOKEN = 5; //asumsi
-      //printf("key: %s\nvalue: %s\n", tokens[KEY_TOKEN].value, );
 
-/*
-      int i;
-      for(i = 0; i < ntokens - 1; ++i) {
-        printf("token[%d]: %s\n", i, tokens[i].value);
-      }
-*/
+      //get item
+      kv_type temp;
+      temp.key = tokens[KEY_TOKEN].value;
+      int idx = 0;
+      if((idx = get_idx(curT.ws, nelems(curT.ws), k))) {
 
-/*
-      token_t *key_token = &tokens[KEY_TOKEN];
-      item *it = item_get(key_token->value, key_token->length);
-      printf("ITEM_key(it): %s\nITEM_data(it): %s\n", ITEM_key(it), ITEM_data(it));
-*/
-
-      if(get_idx(curT.ws, nelems(curT.ws), k)) {
         //write to copies
+        char * token = strtok(c->req_value, "\n");
+        token = strtok(NULL, "\n");
+        free(c->req_value);
+        //printf("token: %s\n",token);
+        temp.value = token;
+        curT.copies[idx] = temp;
       } else {
+
         //get item
-        kv_type temp;
-        temp.key = tokens[KEY_TOKEN].value;
         token_t *key_token = &tokens[KEY_TOKEN];
         temp.value = ITEM_data(item_get(key_token->value, key_token->length));
         //printf("ITEM_data(it) dulu: %s\n", temp.value);
@@ -3755,9 +3752,7 @@ static void process_command(conn *c, char *command) {
         //insert to write set
         curT.ws[curT.ws_avail] = temp;
         curT.ws_avail += 1;
-
-        //insert to copies array
-        printf("c->rcurr: %s\nc->rbytes: %d\nc->req_value: %s\n", c->rcurr, c->rbytes, c->req_value);
+        //write to copies
         char * token = strtok(c->req_value, "\n");
         token = strtok(NULL, "\n");
         free(c->req_value);
@@ -3767,7 +3762,13 @@ static void process_command(conn *c, char *command) {
         curT.copies_avail += 1;
       }
 
-      process_update_command(c, tokens, ntokens, comm, false);
+      //dummy to avoid error
+      //comm = NREAD_SET;
+      //process_update_command(c, tokens, ntokens, comm, false);
+      return;
+    } else if(strcmp(tokens[COMMAND_TOKEN].value, "tread") == 0) {
+      printf("command tread dikenali\n");
+
     } else if(strcmp(tokens[COMMAND_TOKEN].value, "end") == 0) {
       printf("command 'end' dikenali\n");
 
