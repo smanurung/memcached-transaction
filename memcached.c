@@ -3986,75 +3986,76 @@ static void process_command(conn *c, char *command) {
 
       //twrite algorithm
       int trans_id = c->sfd;
-      transaction_type curT = get_transaction(T, trans_id);
-      printf("curT.id = %d\n",curT.id);
+      transaction_type *curT = get_transaction(T, trans_id);
+      printf("curT.id = %d\n",curT->id);
 
-      char *k = tokens[KEY_TOKEN].value;
+      char *k = malloc(1024);
+      strcpy(k, tokens[KEY_TOKEN].value);
 
       //get item
       kv_type temp;
-      temp.key = tokens[KEY_TOKEN].value;
+      temp.key = k;
       int idx = 0;
-      if((idx = get_idx(curT.ws, nelems(curT.ws), k)) != -1) {
+      //if already within writeset
+      if((idx = get_idx(curT->ws, nelems(curT->ws), k)) != -1) {
 
         //write to copies
         char * token = strtok(c->req_value, "\n");
         token = strtok(NULL, "\n");
         free(c->req_value);
-        //printf("token: %s\n",token);
         temp.value = token;
-        curT.copies[idx] = temp;
+        curT->copies[idx] = temp;
       } else {
 
         //get item
         token_t *key_token = &tokens[KEY_TOKEN];
-        temp.value = ITEM_data(item_get(key_token->value, key_token->length));
-        //printf("ITEM_data(it) dulu: %s\n", temp.value);
+        temp.value = ITEM_data(item_get(key_token->value, key_token->length)); //guess: ITEM_data has allocated new memory for its return value
 
         //insert to write set
-        curT.ws[curT.ws_avail] = temp;
-        curT.ws_avail += 1;
+        curT->ws[curT->ws_avail] = temp;
+        curT->ws_avail += 1;
         //write to copies
-        char * token = strtok(c->req_value, "\n");
+        char * token = strtok(c->req_value, "\n"); //guess: strtok provided different memory space
         token = strtok(NULL, "\n");
         free(c->req_value);
-        //printf("token: %s\n",token);
         temp.value = token;
-        curT.copies[curT.copies_avail] = temp;
-        curT.copies_avail += 1;
+        curT->copies[curT->copies_avail] = temp;
+        curT->copies_avail += 1;
       }
 
       //dummy to avoid error
       //comm = NREAD_SET;
       //process_update_command(c, tokens, ntokens, comm, false);
       return;
+
     } else if(strcmp(tokens[COMMAND_TOKEN].value, "tread") == 0) {
       printf("command tread dikenali\n");
 
       //prepare transaction
       int trans_id = c->sfd;
-      transaction_type curT = get_transaction(T, trans_id);
-      printf("curT.id = %d\n",curT.id);
+      transaction_type *curT = get_transaction(T, trans_id);
+      printf("curT.id = %d\n",curT->id);
 
       char *req_key = (char *)malloc(tokens[KEY_TOKEN].length * sizeof(char));
       strcpy(req_key, tokens[KEY_TOKEN].value);
-      printf("tread key: %s\n", req_key);
 
       kv_type temp;
       temp.key = req_key;
       temp.value = NULL;
 
       //add to readset, if not already
-      if(get_idx(curT.rs, nelems(curT.rs), req_key) == -1) {
-        curT.rs[curT.rs_avail] = temp;
-        curT.rs_avail += 1;
+      if(get_idx(curT->rs, nelems(curT->rs), req_key) == -1) {
+        curT->rs[curT->rs_avail] = temp;
+        curT->rs_avail += 1;
       }
 
       //send to client
       int idx = 0;
-      if((idx = get_idx(curT.ws, nelems(curT.ws), req_key)) != -1) {
+      if((idx = get_idx(curT->ws, nelems(curT->ws), req_key)) != -1) {
         //send copies ???
-        process_tread_command(c, tokens, ntokens, false, curT.ws[idx].value);
+        int j = 0;
+        j = get_idx(curT->copies, nelems(curT->copies), req_key);
+        process_tread_command(c, tokens, ntokens, false, curT->copies[j].value);
       } else {
         //send from data store
         process_get_command(c, tokens, ntokens, false);
@@ -4093,14 +4094,18 @@ void print_transaction(transaction_type T[]) {
   int i = 0;
   for(i = 0; i < max_trans; ++i) {
     printf("id ke-%d: %d\n", i, T[i].id);
+    int j = 0;
+    for(j = 0; j < 3; ++j) {
+      printf("%d: %s %s\n", j, T[i].copies[j].key, T[i].copies[j].value);
+    }
   }
 }
 
-transaction_type get_transaction(transaction_type *T, int id) {
-  transaction_type t;
+transaction_type *get_transaction(transaction_type *T, int id) {
+  transaction_type *t;
   int i = 0;
   for(i = 0; i < max_trans; ++i) {
-    if(T[i].id == id) t = T[i];
+    if(T[i].id == id) t = &T[i];
   }
   return t;
 }
