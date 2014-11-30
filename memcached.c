@@ -2907,6 +2907,25 @@ static void process_stat(conn *c, token_t *tokens, const size_t ntokens) {
     }
 }
 
+/*
+  function from "http://www.linuxquestions.org/questions/programming-9/replace-a-substring-with-another-string-in-c-170076/"
+*/
+char *replace_str(char *str, char *orig, char *rep)
+{
+  static char buffer[4096];
+  char *p;
+
+  if(!(p = strstr(str, orig)))  // Is 'orig' even in 'str'?
+    return str;
+
+    strncpy(buffer, str, p-str); // Copy characters from 'str' start to 'orig' st$
+    buffer[p-str] = '\0';
+
+    sprintf(buffer+(p-str), "%s%s", rep, p+strlen(orig));
+
+    return buffer;
+}
+
 /* ntokens is overwritten here... shrug.. */
 static inline void process_get_command(conn *c, token_t *tokens, size_t ntokens, bool return_cas) {
 	printf("ke process_get_command\n");
@@ -3009,6 +3028,7 @@ static inline void process_get_command(conn *c, token_t *tokens, size_t ntokens,
                 {
                   MEMCACHED_COMMAND_GET(c->sfd, ITEM_key(it), it->nkey,
                                         it->nbytes, ITEM_get_cas(it));
+
                   if (add_iov(c, "VALUE ", 6) != 0 ||
                       add_iov(c, ITEM_key(it), it->nkey) != 0 ||
                       add_iov(c, ITEM_suffix(it), it->nsuffix + it->nbytes) != 0)
@@ -3016,6 +3036,37 @@ static inline void process_get_command(conn *c, token_t *tokens, size_t ntokens,
                           item_remove(it);
                           break;
                       }
+
+                  /*
+                  char suff[1024];
+                  char *old_val; //from ITEM_data
+                  char new_val[1024];
+                  char *suff_result; //end result to put in add_iov method
+                  char old_val_length[100], new_val_length[100]; //value length in string
+
+                  strcpy(new_val, "mamplevv");
+
+                  strcpy(suff, ITEM_suffix(it));
+                  old_val = strtok(ITEM_data(it), "\n");
+
+                  //value replacement in item suffix
+                  suff_result = replace_str(suff, old_val, new_val);
+                  strcpy(suff, suff_result);
+
+                  sprintf(old_val_length, "%d", it->nbytes - 2);
+                  sprintf(new_val_length, "%d", (int)strlen(new_val));
+
+                  //value length replacement in item suffix
+                  suff_result = replace_str(suff, old_val_length, new_val_length);
+
+                  if (add_iov(c, "VALUE ", 6) != 0 ||
+                    add_iov(c, ITEM_key(it), it->nkey) != 0 ||
+                    add_iov(c, suff_result, it->nsuffix + it->nbytes) != 0)
+                    {
+                      item_remove(it);
+                      break;
+                    }
+                  */
                 }
 
 
@@ -3461,6 +3512,217 @@ static void process_slabs_automove_command(conn *c, token_t *tokens, const size_
     return;
 }
 
+/*
+modification from process_get_command
+*/
+static inline void process_tread_command(conn *c, token_t *tokens, size_t ntokens, bool return_cas, char *new_value) {
+  printf("ke process_get_command\n");
+  char *key;
+  size_t nkey;
+  int i = 0;
+  item *it;
+  token_t *key_token = &tokens[KEY_TOKEN];
+  char *suffix;
+  assert(c != NULL);
+
+  do {
+    while(key_token->length != 0) {
+
+      key = key_token->value;
+      nkey = key_token->length;
+
+      if(nkey > KEY_MAX_LENGTH) {
+        out_string(c, "CLIENT_ERROR bad command line format");
+        while (i-- > 0) {
+          item_remove(*(c->ilist + i));
+        }
+        return;
+      }
+
+      it = item_get(key, nkey);
+      if (settings.detail_enabled) {
+        stats_prefix_record_get(key, nkey, NULL != it);
+      }
+      if (it) {
+        if (i >= c->isize) {
+          item **new_list = realloc(c->ilist, sizeof(item *) * c->isize * 2);
+          if (new_list) {
+            c->isize *= 2;
+            c->ilist = new_list;
+          } else {
+            STATS_LOCK();
+            stats.malloc_fails++;
+            STATS_UNLOCK();
+            item_remove(it);
+            break;
+          }
+        }
+
+        /*
+        * Construct the response. Each hit adds three elements to the
+        * outgoing data list:
+        *   "VALUE "
+        *   key
+        *   " " + flags + " " + data length + "\r\n" + data (with \r\n)
+        */
+
+        if (return_cas)
+          {
+            MEMCACHED_COMMAND_GET(c->sfd, ITEM_key(it), it->nkey,
+            it->nbytes, ITEM_get_cas(it));
+            /* Goofy mid-flight realloc. */
+            if (i >= c->suffixsize) {
+              char **new_suffix_list = realloc(c->suffixlist,
+              sizeof(char *) * c->suffixsize * 2);
+              if (new_suffix_list) {
+                c->suffixsize *= 2;
+                c->suffixlist  = new_suffix_list;
+              } else {
+                STATS_LOCK();
+                stats.malloc_fails++;
+                STATS_UNLOCK();
+                item_remove(it);
+                break;
+              }
+            }
+
+            suffix = cache_alloc(c->thread->suffix_cache);
+            if (suffix == NULL) {
+              STATS_LOCK();
+              stats.malloc_fails++;
+              STATS_UNLOCK();
+              out_of_memory(c, "SERVER_ERROR out of memory making CAS suffix");
+              item_remove(it);
+              while (i-- > 0) {
+                item_remove(*(c->ilist + i));
+              }
+              return;
+            }
+            *(c->suffixlist + i) = suffix;
+            int suffix_len = snprintf(suffix, SUFFIX_SIZE,
+            " %llu\r\n",
+            (unsigned long long)ITEM_get_cas(it));
+            if (add_iov(c, "VALUE ", 6) != 0 ||
+              add_iov(c, ITEM_key(it), it->nkey) != 0 ||
+              add_iov(c, ITEM_suffix(it), it->nsuffix - 2) != 0 ||
+              add_iov(c, suffix, suffix_len) != 0 ||
+              add_iov(c, ITEM_data(it), it->nbytes) != 0)
+              {
+                item_remove(it);
+                break;
+              }
+            }
+            else
+              {
+                MEMCACHED_COMMAND_GET(c->sfd, ITEM_key(it), it->nkey,
+                it->nbytes, ITEM_get_cas(it));
+
+                /*
+                if (add_iov(c, "VALUE ", 6) != 0 ||
+                add_iov(c, ITEM_key(it), it->nkey) != 0 ||
+                add_iov(c, ITEM_suffix(it), it->nsuffix + it->nbytes) != 0)
+                {
+                item_remove(it);
+                break;
+              }
+              */
+
+              char suff[1024];
+              char *old_val; //from ITEM_data
+              char new_val[1024];
+              char *suff_result; //end result to put in add_iov method
+              char old_val_length[100], new_val_length[100]; //value length in string
+
+              strcpy(new_val, new_value);
+
+              strcpy(suff, ITEM_suffix(it));
+              old_val = strtok(ITEM_data(it), "\n");
+
+              //value replacement in item suffix
+              suff_result = replace_str(suff, old_val, new_val);
+              strcpy(suff, suff_result);
+
+              sprintf(old_val_length, "%d", it->nbytes - 2);
+              sprintf(new_val_length, "%d", (int)strlen(new_val));
+
+              //value length replacement in item suffix
+              suff_result = replace_str(suff, old_val_length, new_val_length);
+
+              if (add_iov(c, "VALUE ", 6) != 0 ||
+                add_iov(c, ITEM_key(it), it->nkey) != 0 ||
+                add_iov(c, suff_result, it->nsuffix + it->nbytes) != 0)
+                {
+                  item_remove(it);
+                  break;
+                }
+              }
+
+
+              if (settings.verbose > 1) {
+                int ii;
+                fprintf(stderr, ">%d sending key ", c->sfd);
+                for (ii = 0; ii < it->nkey; ++ii) {
+                  fprintf(stderr, "%c", key[ii]);
+                }
+                fprintf(stderr, "\n");
+              }
+
+              /* item_get() has incremented it->refcount for us */
+              pthread_mutex_lock(&c->thread->stats.mutex);
+              c->thread->stats.slab_stats[it->slabs_clsid].get_hits++;
+              c->thread->stats.get_cmds++;
+              pthread_mutex_unlock(&c->thread->stats.mutex);
+              item_update(it);
+              *(c->ilist + i) = it;
+              i++;
+
+            } else {
+              pthread_mutex_lock(&c->thread->stats.mutex);
+              c->thread->stats.get_misses++;
+              c->thread->stats.get_cmds++;
+              pthread_mutex_unlock(&c->thread->stats.mutex);
+              MEMCACHED_COMMAND_GET(c->sfd, key, nkey, -1, 0);
+            }
+
+            key_token++;
+          }
+
+          /*
+          * If the command string hasn't been fully processed, get the next set
+          * of tokens.
+          */
+          if(key_token->value != NULL) {
+            ntokens = tokenize_command(key_token->value, tokens, MAX_TOKENS);
+            key_token = tokens;
+          }
+
+        } while(key_token->value != NULL);
+
+        c->icurr = c->ilist;
+        c->ileft = i;
+        if (return_cas) {
+          c->suffixcurr = c->suffixlist;
+          c->suffixleft = i;
+        }
+
+        if (settings.verbose > 1)
+          fprintf(stderr, ">%d END\n", c->sfd);
+
+          /*
+          If the loop was terminated because of out-of-memory, it is not
+          reliable to add END\r\n to the buffer, because it might not end
+          in \r\n. So we send SERVER_ERROR instead.
+          */
+          if (key_token->value != NULL || add_iov(c, "END\r\n", 5) != 0
+            || (IS_UDP(c->transport) && build_udp_headers(c) != 0)) {
+              out_of_memory(c, "SERVER_ERROR out of memory writing get response");
+            }
+            else {
+              conn_set_state(c, conn_mwrite);
+              c->msgcurr = 0;
+            }
+}
+
 static void process_command(conn *c, char *command) {
 	printf("ke process_command | Command: %s\n",command);
 
@@ -3733,7 +3995,7 @@ static void process_command(conn *c, char *command) {
       kv_type temp;
       temp.key = tokens[KEY_TOKEN].value;
       int idx = 0;
-      if((idx = get_idx(curT.ws, nelems(curT.ws), k))) {
+      if((idx = get_idx(curT.ws, nelems(curT.ws), k)) != -1) {
 
         //write to copies
         char * token = strtok(c->req_value, "\n");
@@ -3769,6 +4031,37 @@ static void process_command(conn *c, char *command) {
     } else if(strcmp(tokens[COMMAND_TOKEN].value, "tread") == 0) {
       printf("command tread dikenali\n");
 
+      //prepare transaction
+      int trans_id = c->sfd;
+      transaction_type curT = get_transaction(T, trans_id);
+      printf("curT.id = %d\n",curT.id);
+
+      char *req_key = (char *)malloc(tokens[KEY_TOKEN].length * sizeof(char));
+      strcpy(req_key, tokens[KEY_TOKEN].value);
+      printf("tread key: %s\n", req_key);
+
+      kv_type temp;
+      temp.key = req_key;
+      temp.value = NULL;
+
+      //add to readset, if not already
+      if(get_idx(curT.rs, nelems(curT.rs), req_key) == -1) {
+        curT.rs[curT.rs_avail] = temp;
+        curT.rs_avail += 1;
+      }
+
+      //send to client
+      int idx = 0;
+      if((idx = get_idx(curT.ws, nelems(curT.ws), req_key)) != -1) {
+        //send copies ???
+        process_tread_command(c, tokens, ntokens, false, curT.ws[idx].value);
+      } else {
+        //send from data store
+        process_get_command(c, tokens, ntokens, false);
+      }
+
+      free(req_key);
+
     } else if(strcmp(tokens[COMMAND_TOKEN].value, "end") == 0) {
       printf("command 'end' dikenali\n");
 
@@ -3793,7 +4086,7 @@ int get_idx(kv_type s[], int size, char *k) {
       return j;
     }
   }
-  return 0;
+  return -1;
 }
 
 void print_transaction(transaction_type T[]) {

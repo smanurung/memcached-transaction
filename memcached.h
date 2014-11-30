@@ -639,3 +639,4 @@ transaction_type get_transaction(transaction_type T[], int id);
 void print_transaction(transaction_type T[]);
 int get_idx(kv_type s[], int size, char *k);
 kv_type copy(char *key);
+char *replace_str(char *str, char *orig, char *rep);
