@@ -619,9 +619,14 @@ typedef struct {
   char *value;
 } kv_type;
 
+typedef struct token_s {
+  char *value;
+  size_t length;
+} token_t;
+
 typedef struct {
   int id; //use sfd from connection
-  size_t tn;
+  size_t tn; //starts from 1
 
   kv_type rs[20];
   kv_type ws[20];
@@ -633,10 +638,15 @@ typedef struct {
 
   int start_tn;
   int finish_tn;
+
 } transaction_type;
 
+//static void process_begin_command(conn *c, token_t *tokens, size_t ntokens);
+
 transaction_type *get_transaction(transaction_type T[], int id);
+transaction_type *get_transaction_by_tn(transaction_type *T, int tn);
 void print_transaction(transaction_type T[]);
 int get_idx(kv_type s[], int size, char *k);
-kv_type copy(char *key);
+//kv_type copy(char *key);
 char *replace_str(char *str, char *orig, char *rep);
+int isIntersect(kv_type a[], int sa, kv_type b[], int sb);

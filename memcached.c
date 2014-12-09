@@ -97,7 +97,7 @@ static void conn_close(conn *c);
 static void conn_init(void);
 static bool update_event(conn *c, const int new_flags);
 static void complete_nread(conn *c);
-static void process_command(conn *c, char *command);
+static void process_command(conn *c, char *command, char **cont);
 static void write_and_free(conn *c, char *buf, int bytes);
 static int ensure_iov_space(conn *c);
 static int add_iov(conn *c, const void *buf, int len);
@@ -621,6 +621,8 @@ static void conn_shrink(conn *c) {
     if (IS_UDP(c->transport))
         return;
 
+    printf("c->rbuf: %s\nc->rcurr: %s\n", c->rbuf, c->rcurr);
+
     if (c->rsize > READ_BUFFER_HIGHWAT && c->rbytes < DATA_BUFFER_SIZE) {
         char *newbuf;
 
@@ -636,6 +638,8 @@ static void conn_shrink(conn *c) {
         /* TODO check other branch... */
         c->rcurr = c->rbuf;
     }
+
+    printf("c->rbuf: %s\nc->rcurr: %s\n", c->rbuf, c->rcurr);
 
     if (c->isize > ITEM_LIST_HIGHWAT) {
         item **newbuf = (item**) realloc((void *)c->ilist, ITEM_LIST_INITIAL * sizeof(c->ilist[0]));
@@ -694,12 +698,14 @@ static void conn_set_state(conn *c, enum conn_states state) {
     assert(c != NULL);
     assert(state >= conn_listening && state < conn_max_state);
 
+    printf("=== state %u => %u\n", c->state, state);
+
     if (state != c->state) {
-        if (settings.verbose > 2) {
+        //if (settings.verbose > 2) {
             fprintf(stderr, "%d: going from %s to %s\n",
                     c->sfd, state_text(c->state),
                     state_text(state));
-        }
+        //}
 
         if (state == conn_write || state == conn_mwrite) {
             MEMCACHED_PROCESS_COMMAND_END(c->sfd, c->wbuf, c->wbytes);
@@ -919,12 +925,15 @@ static void complete_nread_ascii(conn *c) {
   int comm = c->cmd;
   enum store_item_type ret;
 
+  //printf("akses slabs_clsid: %d\n", it->slabs_clsid);
   pthread_mutex_lock(&c->thread->stats.mutex);
   c->thread->stats.slab_stats[it->slabs_clsid].set_cmds++;
   pthread_mutex_unlock(&c->thread->stats.mutex);
 
+  printf("baru masuk if\n");
   if (strncmp(ITEM_data(it) + it->nbytes - 2, "\r\n", 2) != 0) {
     out_string(c, "CLIENT_ERROR bad data chunk");
+    //printf("bad data chunk\n");
   } else {
     ret = store_item(it, comm, c);
 
@@ -2306,6 +2315,7 @@ static void reset_cmd_handler(conn *c) {
         c->item = NULL;
     }
     conn_shrink(c);
+    printf("Current c->rbytes: %d\n", c->rbytes);
     if (c->rbytes > 0) {
         conn_set_state(c, conn_parse_cmd);
     } else {
@@ -2315,6 +2325,9 @@ static void reset_cmd_handler(conn *c) {
 
 static void complete_nread(conn *c) {
 	printf("ke complete_nread\n");
+
+  if(c == NULL) printf("C anda NULL\n");
+
     assert(c != NULL);
     assert(c->protocol == ascii_prot
            || c->protocol == binary_prot);
@@ -2450,10 +2463,12 @@ enum store_item_type do_store_item(item *it, int comm, conn *c, const uint32_t h
             return stored;
 }
 
+/*
 typedef struct token_s {
     char *value;
     size_t length;
 } token_t;
+*/
 
 #define COMMAND_TOKEN 0
 #define SUBCOMMAND_TOKEN 1
@@ -2482,7 +2497,7 @@ static size_t tokenize_command(char *command, token_t *tokens, const size_t max_
 	printf("ke tokenize_command\n");
     char *s, *e;
     size_t ntokens = 0;
-    size_t len = strlen(command);
+    size_t len = strlen(command); //17
     unsigned int i = 0;
 
     assert(command != NULL && tokens != NULL && max_tokens > 1);
@@ -2491,11 +2506,14 @@ static size_t tokenize_command(char *command, token_t *tokens, const size_t max_
     for (i = 0; i < len; i++) {
         if (*e == ' ') {
             if (s != e) {
+                //printf("s1: %s\n",s);
                 tokens[ntokens].value = s;
                 tokens[ntokens].length = e - s;
                 ntokens++;
                 *e = '\0';
+                //printf("s2: %s\n",s);
                 if (ntokens == max_tokens - 1) {
+                    printf("masuk break\n");
                     e++;
                     s = e; /* so we don't add an extra token */
                     break;
@@ -2503,10 +2521,15 @@ static size_t tokenize_command(char *command, token_t *tokens, const size_t max_
             }
             s = e + 1;
         }
+        //printf("i: %d ", i);
+        //printf("s: %s\ne: %s\n", s, e);
         e++;
+        //printf("s: %s\ne: %s\n", s, e);
     }
 
+    //printf("s: %s\ne: %s\n", s, e);
     if (s != e) {
+      printf("masuk sini\n");
         tokens[ntokens].value = s;
         tokens[ntokens].length = e - s;
         ntokens++;
@@ -3138,7 +3161,7 @@ static inline void process_get_command(conn *c, token_t *tokens, size_t ntokens,
 static void process_update_command(conn *c, token_t *tokens, const size_t ntokens, int comm, bool handle_cas) {
     printf("ke process_update_command\n");
 
-	char *key;
+	  char *key;
     size_t nkey;
     unsigned int flags;
     int32_t exptime_int = 0;
@@ -3183,19 +3206,24 @@ static void process_update_command(conn *c, token_t *tokens, const size_t ntoken
         }
     }
 
+    printf("vlen: %d\n", vlen);
     vlen += 2;
     if (vlen < 0 || vlen - 2 < 0) {
         out_string(c, "CLIENT_ERROR bad command line format");
         return;
     }
+    printf("vlen: %d\n", vlen);
 
     if (settings.detail_enabled) {
         stats_prefix_record_set(key, nkey);
     }
 
+    printf("---item params\n");
+    printf("key: %s, nkey: %lu, flags: %d, exptime: %ld, nbytes: %d\n", key, nkey, flags, exptime, vlen);
     it = item_alloc(key, nkey, flags, realtime(exptime), vlen);
 
     if (it == 0) {
+      printf("masuk it == 0\n");
         if (! item_size_ok(nkey, flags, vlen))
             out_string(c, "SERVER_ERROR object too large for cache");
         else
@@ -3220,9 +3248,12 @@ static void process_update_command(conn *c, token_t *tokens, const size_t ntoken
 
     c->item = it;
     c->ritem = ITEM_data(it);
-    c->rlbytes = it->nbytes;
+    printf("it->nbytes: %d\nc->rlbytes: %d\n", it->nbytes, c->rlbytes);
+    c->rlbytes = it->nbytes; //nbytes darimana?? kapan disetnya?
     c->cmd = comm;
     conn_set_state(c, conn_nread);
+
+    printf("update berhasil yay\n");
 }
 
 static void process_touch_command(conn *c, token_t *tokens, const size_t ntokens) {
@@ -3723,8 +3754,33 @@ static inline void process_tread_command(conn *c, token_t *tokens, size_t ntoken
             }
 }
 
-static void process_command(conn *c, char *command) {
+static void process_tbegin_command(conn *c, token_t *tokens, size_t ntokens) {
+  //use sfd as transaction_id
+  int new_id = c->sfd;
+
+  //create new transaction
+  T[tnc].id = new_id;
+  T[tnc].start_tn = tnc;
+  T[tnc].finish_tn = 0;
+  T[tnc].rs_avail = 0;
+  T[tnc].ws_avail = 0;
+  T[tnc].copies_avail = 0;
+
+  printf("transaction_id %d assigned\n", T[tnc].id);
+
+  //return;
+  process_update_command(c, tokens, ntokens, NREAD_SET, false);
+  return;
+}
+
+static void process_command(conn *c, char *command, char **cont) {
 	printf("ke process_command | Command: %s\n",command);
+  //command[strlen(command)] = ' ';
+  //printf("ke process_command X | Command: %s\n",command);
+  //command[strlen(command)] = '\0';
+  printf("strlen(command): %lu\n", strlen(command));
+  printf("--- ho %s\n", command + strlen(command) + 2);
+
 
     token_t tokens[MAX_TOKENS];
     size_t ntokens;
@@ -3750,7 +3806,11 @@ static void process_command(conn *c, char *command) {
         return;
     }
 
+    printf("c->rcurr: %s\nc->rbuf: %s\nc->rbytes: %d\n", c->rcurr, c->rbuf, c->rbytes);
     ntokens = tokenize_command(command, tokens, MAX_TOKENS);
+    printf("setelah tokenize command\n");
+    printf("c->rcurr: %s\nc->rbuf: %s\nc->rbytes: %d\n", c->rcurr, c->rbuf, c->rbytes);
+
     if (ntokens >= 3 &&
         ((strcmp(tokens[COMMAND_TOKEN].value, "get") == 0) ||
          (strcmp(tokens[COMMAND_TOKEN].value, "bget") == 0))) {
@@ -3764,7 +3824,9 @@ static void process_command(conn *c, char *command) {
                 (strcmp(tokens[COMMAND_TOKEN].value, "prepend") == 0 && (comm = NREAD_PREPEND)) ||
                 (strcmp(tokens[COMMAND_TOKEN].value, "append") == 0 && (comm = NREAD_APPEND)) )) {
 
-        printf("c->rcurr: %s\n", c->rcurr);
+        printf("c->rcurr bb: %s\n", c->rcurr);
+        printf("c->state bb: %u\n", c->state);
+
         process_update_command(c, tokens, ntokens, comm, false);
 
     } else if ((ntokens == 7 || ntokens == 8) && (strcmp(tokens[COMMAND_TOKEN].value, "cas") == 0 && (comm = NREAD_CAS))) {
@@ -3962,24 +4024,9 @@ static void process_command(conn *c, char *command) {
     } else if ((ntokens == 3 || ntokens == 4) && (strcmp(tokens[COMMAND_TOKEN].value, "verbosity") == 0)) {
         process_verbosity_command(c, tokens, ntokens);
     } else if(strcmp(tokens[COMMAND_TOKEN].value, "begin") == 0) {
+
       printf("command 'begin' dikenali\n");
-
-      //use sfd as transaction_id
-      int new_id = c->sfd;
-
-      //create new transaction
-      T[tnc].id = new_id;
-      T[tnc].start_tn = tnc;
-      T[tnc].finish_tn = 0;
-      T[tnc].rs_avail = 0;
-      T[tnc].ws_avail = 0;
-      T[tnc].copies_avail = 0;
-
-      printf("transaction_id %d assigned\n", T[tnc].id);
-
-      return;
-      //comm = NREAD_SET;
-      //process_update_command(c, tokens, ntokens, comm, false);
+      process_tbegin_command(c, tokens, ntokens);
 
     } else if(((ntokens == 6) || (ntokens == 7)) && (strcmp(tokens[COMMAND_TOKEN].value, "tset") == 0)) {
       printf("'tset' dikenali\n");
@@ -4024,8 +4071,8 @@ static void process_command(conn *c, char *command) {
       }
 
       //dummy to avoid error
-      //comm = NREAD_SET;
-      //process_update_command(c, tokens, ntokens, comm, false);
+      process_update_command(c, tokens, ntokens, NREAD_SET, false);
+      //process_update_command(c, curT->tokens[curT->param_avail - 1], ntokens, NREAD_SET, false);
       return;
 
     } else if(strcmp(tokens[COMMAND_TOKEN].value, "tread") == 0) {
@@ -4036,7 +4083,8 @@ static void process_command(conn *c, char *command) {
       transaction_type *curT = get_transaction(T, trans_id);
       printf("curT.id = %d\n",curT->id);
 
-      char *req_key = (char *)malloc(tokens[KEY_TOKEN].length * sizeof(char));
+      //allocate separate memory from tokens
+      char *req_key = malloc(tokens[KEY_TOKEN].length * sizeof(char));
       strcpy(req_key, tokens[KEY_TOKEN].value);
 
       kv_type temp;
@@ -4066,9 +4114,54 @@ static void process_command(conn *c, char *command) {
     } else if(strcmp(tokens[COMMAND_TOKEN].value, "end") == 0) {
       printf("command 'end' dikenali\n");
 
-      //start validating
-      comm = NREAD_SET;
-      process_update_command(c, tokens, ntokens, comm, false);
+      //retrieve current transaction
+      int trans_id = c->sfd;
+      transaction_type *curT = get_transaction(T, trans_id);
+      printf("curT.id = %d\n",curT->id);
+
+      curT->finish_tn = tnc;
+      bool valid = true;
+      for(int i = curT->start_tn + 1; i < curT->finish_tn; ++i) {
+        transaction_type *tmpT = get_transaction_by_tn(T, i);
+        if(isIntersect(tmpT->ws, nelems(tmpT->ws), curT->rs, nelems(curT->rs)) == 1) {
+          valid = false;
+        }
+      }
+      if(valid) {
+        printf("yay valid!\n");
+
+        //update tnc and transaction number
+        tnc += 1;
+        curT->tn = tnc;
+      }
+
+      printf("btw.copies.avail: %d\n", curT->copies_avail);
+      for (int i = 0; i < curT->copies_avail; i++) {
+        //sprintf(command, "set %s 0 0 %lu", curT->copies[i].key, strlen(curT->copies[i].value) - 1);
+        sprintf(command, "set %s 0 0 8\r\n", curT->copies[i].key);
+
+        //manipulate rbytes
+        c->rbytes = 29;
+        printf("rbytes harus aman: %d\n", c->rbytes);
+
+        char *el = memchr(command, '\r', c->rbytes);
+        *el = '\0';
+        printf("Command.Cuy ----------: %s\n", command);
+
+        *cont = &command[strlen(command)] + 2;
+        printf("strlen(command): %lu\n", strlen(command));
+        strcpy(*cont, "manalunk\r\n");
+        printf("cont8: %s\n", *cont);
+
+        printf("c->rcurr: %s\nc->rbuf: %s\nc->rbytes: %d\n", c->rcurr, c->rbuf, c->rbytes);
+        ntokens = tokenize_command(command, tokens, MAX_TOKENS);
+        printf("setelah tokenize command\n");
+        printf("c->rcurr: %s\nc->rbuf: %s\nc->rbytes: %d\n", c->rcurr, c->rbuf, c->rbytes);
+
+        printf("c->state aa: %u\n", c->state);
+        process_update_command(c, tokens, ntokens, NREAD_SET, false);
+      }
+
     } else {
         out_string(c, "ERROR");
     }
@@ -4076,9 +4169,18 @@ static void process_command(conn *c, char *command) {
 }
 
 /*
-kv_type copy(char *key) {
-}
+  return 1 if there's intersection
+  return 0 means no intersection
 */
+int isIntersect(kv_type a[], int sa, kv_type b[], int sb) {
+  int i = 0, j = 0;
+  for(i = 0; i < sa; ++i) {
+    for(j = 0; j < sb; ++j) {
+      if(strcmp(a[i].key, b[j].key) == 0) return 1;
+    }
+  }
+  return 0;
+}
 
 int get_idx(kv_type s[], int size, char *k) {
   int j;
@@ -4101,6 +4203,15 @@ void print_transaction(transaction_type T[]) {
   }
 }
 
+transaction_type *get_transaction_by_tn(transaction_type *T, int tn) {
+  transaction_type *t;
+  int i = 0;
+  for(i = 0; i < max_trans; ++i) {
+    if(T[i].tn == tn) t = &T[i];
+  }
+  return t;
+}
+
 transaction_type *get_transaction(transaction_type *T, int id) {
   transaction_type *t;
   int i = 0;
@@ -4114,8 +4225,13 @@ transaction_type *get_transaction(transaction_type *T, int id) {
  * if we have a complete line in the buffer, process it.
  */
 static int try_read_command(conn *c) {
-	printf("ke try_read_command\nc->curr: %s\nc->ritem: %s\n", c->rcurr, c->ritem);
-  c->req_value = (char *)malloc(50);
+
+  printf("ke try_read_command\n");
+  printf("c->rcurr: %s\nc->rbuf: %s\nc->rbytes: %d\n", c->rcurr, c->rbuf, c->rbytes);
+  if(c->rcurr == c->rbuf) printf("rcurr == rbuf\n");
+  else printf("rcurr != rbuf\n");
+
+  c->req_value = malloc(50);
   strcpy(c->req_value,c->rcurr);
 
     assert(c != NULL);
@@ -4129,10 +4245,10 @@ static int try_read_command(conn *c) {
             c->protocol = ascii_prot;
         }
 
-        if (settings.verbose > 1) {
+        //if (settings.verbose > 1) {
             fprintf(stderr, "%d: Client using the %s protocol\n", c->sfd,
                     prot_text(c->protocol));
-        }
+        //}
     }
 
     if (c->protocol == binary_prot) {
@@ -4208,6 +4324,7 @@ static int try_read_command(conn *c) {
             return 0;
 
         el = memchr(c->rcurr, '\n', c->rbytes);
+        printf("el: %s\n", el);
         if (!el) {
             if (c->rbytes > 1024) {
                 /*
@@ -4231,17 +4348,25 @@ static int try_read_command(conn *c) {
         }
         cont = el + 1;
         if ((el - c->rcurr) > 1 && *(el - 1) == '\r') {
+            printf("el dimundurin\n");
             el--;
         }
+        printf("el: %s\n", el);
         *el = '\0';
 
         assert(cont <= (c->rcurr + c->rbytes));
+        printf("cont7: %s\n", cont);
 
         c->last_cmd_time = current_time;
-        process_command(c, c->rcurr);
+        process_command(c, c->rcurr, &cont);
 
+        printf("HOLLLAAAAA\n");
+        printf("rcurr1: %s\n", c->rcurr);
+        printf("cont - c->rcurr: %d\n", (int)(cont - c->rcurr));
         c->rbytes -= (cont - c->rcurr);
         c->rcurr = cont;
+        printf("rcurr2: %s\n", c->rcurr);
+        printf("rbytes baru: %d\n", c->rbytes);
 
         assert(c->rcurr <= (c->rbuf + c->rsize));
     }
@@ -4301,17 +4426,19 @@ static enum try_read_result try_read_udp(conn *c) {
  * @return enum try_read_result
  */
 static enum try_read_result try_read_network(conn *c) {
-	printf("ke try_read_network\n");
+	printf("=========ke try_read_network\n");
     enum try_read_result gotdata = READ_NO_DATA_RECEIVED;
     int res;
     int num_allocs = 0;
     assert(c != NULL);
 
+    printf("c->rcurr: %s\nc->rbuf: %s\nc->rbytes: %d\n", c->rcurr, c->rbuf, c->rbytes);
     if (c->rcurr != c->rbuf) {
         if (c->rbytes != 0) /* otherwise there's nothing to copy */
             memmove(c->rbuf, c->rcurr, c->rbytes);
         c->rcurr = c->rbuf;
     }
+    printf("c->rcurr: %s\nc->rbuf: %s\nc->rbytes: %d\n", c->rcurr, c->rbuf, c->rbytes);
 
     while (1) {
         if (c->rbytes >= c->rsize) {
@@ -4359,7 +4486,10 @@ static enum try_read_result try_read_network(conn *c) {
             }
             return READ_ERROR;
         }
+        printf("c->rcurr: %s\nc->rbuf: %s\nc->rbytes: %d\n", c->rcurr, c->rbuf, c->rbytes);
     }
+    printf("FINAL\nc->rcurr: %s\nc->rbuf: %s\nc->rbytes: %d\n", c->rcurr, c->rbuf, c->rbytes);
+    printf("strlen(c->rcurr): %lu\n", strlen(c->rcurr));
     return gotdata;
 }
 
@@ -4500,7 +4630,7 @@ static void drive_machine(conn *c) {
     assert(c != NULL);
 
     while (!stop) {
-
+        printf("Current State: %s\n", state_text(c->state));
         switch(c->state) {
         case conn_listening:
             addrlen = sizeof(addr);
@@ -4574,15 +4704,19 @@ static void drive_machine(conn *c) {
 
             switch (res) {
             case READ_NO_DATA_RECEIVED:
+                printf("READ_NO_DATA_RECEIVED\n");
                 conn_set_state(c, conn_waiting);
                 break;
             case READ_DATA_RECEIVED:
+                printf("READ_DATA_RECEIVED\n");
                 conn_set_state(c, conn_parse_cmd);
                 break;
             case READ_ERROR:
+                printf("READ_ERROR\n");
                 conn_set_state(c, conn_closing);
                 break;
             case READ_MEMORY_ERROR: /* Failed to allocate more memory */
+                printf("READ_MEMORY_ERROR\n");
                 /* State already set by try_read_network */
                 break;
             }
@@ -4626,6 +4760,7 @@ static void drive_machine(conn *c) {
             break;
 
         case conn_nread:
+            printf("rlbytedss: %d\n", c->rlbytes);
             if (c->rlbytes == 0) {
                 complete_nread(c);
                 break;
@@ -4642,7 +4777,11 @@ static void drive_machine(conn *c) {
 
             /* first check if we have leftovers in the conn_read buffer */
             if (c->rbytes > 0) {
+              printf("Makan menjelang siang\n");
                 int tocopy = c->rbytes > c->rlbytes ? c->rlbytes : c->rbytes;
+                printf("rbytes: %d, rlbytes: %d, tocopy: %d\n", c->rbytes, c->rlbytes, tocopy);
+                printf("ritem: %d, rcurr: %d\n", (int) c->ritem, (int) c->rcurr);
+                printf("ritem: %s, rcurr: %s\n", c->ritem, c->rcurr);
                 if (c->ritem != c->rcurr) {
                     memmove(c->ritem, c->rcurr, tocopy);
                 }
@@ -4653,11 +4792,13 @@ static void drive_machine(conn *c) {
                 if (c->rlbytes == 0) {
                     break;
                 }
+                printf("Makan siang\n");
             }
 
             /*  now try reading from the socket */
             res = read(c->sfd, c->ritem, c->rlbytes);
             if (res > 0) {
+              printf("Makan mallam---------\n");
                 pthread_mutex_lock(&c->thread->stats.mutex);
                 c->thread->stats.bytes_read += res;
                 pthread_mutex_unlock(&c->thread->stats.mutex);
@@ -4669,10 +4810,12 @@ static void drive_machine(conn *c) {
                 break;
             }
             if (res == 0) { /* end of stream */
+              printf("Makan pagi\n");
                 conn_set_state(c, conn_closing);
                 break;
             }
             if (res == -1 && (errno == EAGAIN || errno == EWOULDBLOCK)) {
+              printf("Makan soto\n");
                 if (!update_event(c, EV_READ | EV_PERSIST)) {
                     if (settings.verbose > 0)
                         fprintf(stderr, "Couldn't update event\n");
