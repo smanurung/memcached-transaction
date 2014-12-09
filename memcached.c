@@ -3775,9 +3775,6 @@ static void process_tbegin_command(conn *c, token_t *tokens, size_t ntokens) {
 
 static void process_command(conn *c, char *command, char **cont) {
 	printf("ke process_command | Command: %s\n",command);
-  //command[strlen(command)] = ' ';
-  //printf("ke process_command X | Command: %s\n",command);
-  //command[strlen(command)] = '\0';
   printf("strlen(command): %lu\n", strlen(command));
   printf("--- ho %s\n", command + strlen(command) + 2);
 
@@ -4036,13 +4033,14 @@ static void process_command(conn *c, char *command, char **cont) {
       transaction_type *curT = get_transaction(T, trans_id);
       printf("curT.id = %d\n",curT->id);
 
-      char *k = malloc(1024);
+      char *k = malloc(1024*sizeof(char));
       strcpy(k, tokens[KEY_TOKEN].value);
 
       //get item
       kv_type temp;
       temp.key = k;
       int idx = 0;
+
       //if already within writeset
       if((idx = get_idx(curT->ws, nelems(curT->ws), k)) != -1) {
 
@@ -4053,7 +4051,7 @@ static void process_command(conn *c, char *command, char **cont) {
         temp.value = token;
         curT->copies[idx] = temp;
       } else {
-
+        printf("COPIES WOY\n");
         //get item
         token_t *key_token = &tokens[KEY_TOKEN];
         temp.value = ITEM_data(item_get(key_token->value, key_token->length)); //guess: ITEM_data has allocated new memory for its return value
@@ -4061,20 +4059,34 @@ static void process_command(conn *c, char *command, char **cont) {
         //insert to write set
         curT->ws[curT->ws_avail] = temp;
         curT->ws_avail += 1;
+
         //write to copies
-        char * token = strtok(c->req_value, "\n"); //guess: strtok provided different memory space
-        token = strtok(NULL, "\n");
-        free(c->req_value);
-        temp.value = token;
+        //char * token = strtok(c->req_value, "\n"); //guess: strtok provided different memory space
+        //token = strtok(NULL, "\n");
+        //free(c->req_value);
+        //temp.value = token;
+
+        printf("cont: %s %lu\n", *cont, strlen(*cont));
+        temp.value = malloc(1024*sizeof(char));
+        memcpy(temp.value, *cont, strlen(*cont) - 2);
+        printf("temp.value: %s %lu\n", temp.value, strlen(temp.value));
+
         curT->copies[curT->copies_avail] = temp;
+        printf("%s %lu\n", curT->copies[curT->copies_avail].key, strlen(curT->copies[curT->copies_avail].key));
+        printf("%s %lu\n", curT->copies[curT->copies_avail].value, strlen(curT->copies[curT->copies_avail].value));
         curT->copies_avail += 1;
       }
 
-      //dummy to avoid error
-      process_update_command(c, tokens, ntokens, NREAD_SET, false);
-      //process_update_command(c, curT->tokens[curT->param_avail - 1], ntokens, NREAD_SET, false);
-      return;
+      //dummy set <beginK, beginV>
+      sprintf(command, "set beginK 0 0 6\r\n");
+      c->rbytes = 26;
+      char *el = memchr(command, '\r', c->rbytes);
+      *el = '\0';
+      *cont = &command[strlen(command)] + 2;
+      strcpy(*cont, "beginV\r\n");
 
+      ntokens = tokenize_command(command, tokens, MAX_TOKENS);
+      process_update_command(c, tokens, ntokens, NREAD_SET, false);
     } else if(strcmp(tokens[COMMAND_TOKEN].value, "tread") == 0) {
       printf("command tread dikenali\n");
 
@@ -4137,28 +4149,27 @@ static void process_command(conn *c, char *command, char **cont) {
 
       printf("btw.copies.avail: %d\n", curT->copies_avail);
       for (int i = 0; i < curT->copies_avail; i++) {
-        //sprintf(command, "set %s 0 0 %lu", curT->copies[i].key, strlen(curT->copies[i].value) - 1);
-        sprintf(command, "set %s 0 0 8\r\n", curT->copies[i].key);
+        //printf("(%s, %s)\n", curT->copies[i].key, curT->copies[i].value);
+        sprintf(command, "set %s 0 0 %lu\r\n", curT->copies[i].key, strlen(curT->copies[i].value));
 
-        //manipulate rbytes
-        c->rbytes = 29;
-        printf("rbytes harus aman: %d\n", c->rbytes);
+        int sum = strlen(command);
+        c->rbytes = strlen(command); //asumsi
+        //printf("rbytes harus aman: %d\n", c->rbytes);
 
         char *el = memchr(command, '\r', c->rbytes);
         *el = '\0';
-        printf("Command.Cuy ----------: %s\n", command);
-
+        //printf("Command.Cuy ----------: %s\n", command);
         *cont = &command[strlen(command)] + 2;
-        printf("strlen(command): %lu\n", strlen(command));
-        strcpy(*cont, "manalunk\r\n");
-        printf("cont8: %s\n", *cont);
+        sprintf(*cont, "%s\r\n", curT->copies[i].value);
+        sum += strlen(*cont);
+        c->rbytes = sum;
+        //printf("cont8: %s\n", *cont);
 
-        printf("c->rcurr: %s\nc->rbuf: %s\nc->rbytes: %d\n", c->rcurr, c->rbuf, c->rbytes);
+        //printf("c->rcurr: %s\nc->rbuf: %s\nc->rbytes: %d\n", c->rcurr, c->rbuf, c->rbytes);
         ntokens = tokenize_command(command, tokens, MAX_TOKENS);
-        printf("setelah tokenize command\n");
-        printf("c->rcurr: %s\nc->rbuf: %s\nc->rbytes: %d\n", c->rcurr, c->rbuf, c->rbytes);
+        //printf("setelah tokenize command\n");
+        //printf("c->rcurr: %s\nc->rbuf: %s\nc->rbytes: %d\n", c->rcurr, c->rbuf, c->rbytes);
 
-        printf("c->state aa: %u\n", c->state);
         process_update_command(c, tokens, ntokens, NREAD_SET, false);
       }
 
