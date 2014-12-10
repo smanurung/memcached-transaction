@@ -2941,12 +2941,11 @@ char *replace_str(char *str, char *orig, char *rep)
   if(!(p = strstr(str, orig)))  // Is 'orig' even in 'str'?
     return str;
 
-    strncpy(buffer, str, p-str); // Copy characters from 'str' start to 'orig' st$
-    buffer[p-str] = '\0';
+  strncpy(buffer, str, p-str); // Copy characters from 'str' start to 'orig' st$
+  buffer[p-str] = '\0';
+  sprintf(buffer+(p-str), "%s%s", rep, p+strlen(orig));
 
-    sprintf(buffer+(p-str), "%s%s", rep, p+strlen(orig));
-
-    return buffer;
+  return buffer;
 }
 
 /* ntokens is overwritten here... shrug.. */
@@ -2979,7 +2978,7 @@ static inline void process_get_command(conn *c, token_t *tokens, size_t ntokens,
                 stats_prefix_record_get(key, nkey, NULL != it);
             }
             if (it) {
-                if (i >= c->isize) {
+                if (i >= c->isize) { //reallocation of ilist
                     item **new_list = realloc(c->ilist, sizeof(item *) * c->isize * 2);
                     if (new_list) {
                         c->isize *= 2;
@@ -3052,6 +3051,9 @@ static inline void process_get_command(conn *c, token_t *tokens, size_t ntokens,
                   MEMCACHED_COMMAND_GET(c->sfd, ITEM_key(it), it->nkey,
                                         it->nbytes, ITEM_get_cas(it));
 
+                  printf("suffix: %s\n", ITEM_suffix(it));
+                  printf("length: %d + %d\n", it->nsuffix, it->nbytes);
+
                   if (add_iov(c, "VALUE ", 6) != 0 ||
                       add_iov(c, ITEM_key(it), it->nkey) != 0 ||
                       add_iov(c, ITEM_suffix(it), it->nsuffix + it->nbytes) != 0)
@@ -3059,37 +3061,6 @@ static inline void process_get_command(conn *c, token_t *tokens, size_t ntokens,
                           item_remove(it);
                           break;
                       }
-
-                  /*
-                  char suff[1024];
-                  char *old_val; //from ITEM_data
-                  char new_val[1024];
-                  char *suff_result; //end result to put in add_iov method
-                  char old_val_length[100], new_val_length[100]; //value length in string
-
-                  strcpy(new_val, "mamplevv");
-
-                  strcpy(suff, ITEM_suffix(it));
-                  old_val = strtok(ITEM_data(it), "\n");
-
-                  //value replacement in item suffix
-                  suff_result = replace_str(suff, old_val, new_val);
-                  strcpy(suff, suff_result);
-
-                  sprintf(old_val_length, "%d", it->nbytes - 2);
-                  sprintf(new_val_length, "%d", (int)strlen(new_val));
-
-                  //value length replacement in item suffix
-                  suff_result = replace_str(suff, old_val_length, new_val_length);
-
-                  if (add_iov(c, "VALUE ", 6) != 0 ||
-                    add_iov(c, ITEM_key(it), it->nkey) != 0 ||
-                    add_iov(c, suff_result, it->nsuffix + it->nbytes) != 0)
-                    {
-                      item_remove(it);
-                      break;
-                    }
-                  */
                 }
 
 
@@ -3547,7 +3518,7 @@ static void process_slabs_automove_command(conn *c, token_t *tokens, const size_
 modification from process_get_command
 */
 static inline void process_tread_command(conn *c, token_t *tokens, size_t ntokens, bool return_cas, char *new_value) {
-  printf("ke process_get_command\n");
+  printf("ke process_tread_command\n");
   char *key;
   size_t nkey;
   int i = 0;
@@ -3648,46 +3619,43 @@ static inline void process_tread_command(conn *c, token_t *tokens, size_t ntoken
                 MEMCACHED_COMMAND_GET(c->sfd, ITEM_key(it), it->nkey,
                 it->nbytes, ITEM_get_cas(it));
 
-                /*
-                if (add_iov(c, "VALUE ", 6) != 0 ||
-                add_iov(c, ITEM_key(it), it->nkey) != 0 ||
-                add_iov(c, ITEM_suffix(it), it->nsuffix + it->nbytes) != 0)
-                {
-                item_remove(it);
-                break;
-              }
-              */
+              /*transactional read*/
 
               char suff[1024];
-              char *old_val; //from ITEM_data
+              char old_val[1024]; //from ITEM_data
               char new_val[1024];
               char *suff_result; //end result to put in add_iov method
               char old_val_length[100], new_val_length[100]; //value length in string
 
               strcpy(new_val, new_value);
 
-              strcpy(suff, ITEM_suffix(it));
-              old_val = strtok(ITEM_data(it), "\n");
+              sprintf(suff, "%s", ITEM_suffix(it));
 
-              //value replacement in item suffix
+              //get old value
+              char *el = memchr(suff, '\n', strlen(suff));
+              el += 1;
+              char *zero = el + strlen(el) - 2;
+              *zero = '\0';
+              strcpy(old_val, el);
+              *zero = '\r';
+
+              //replace value in suff
               suff_result = replace_str(suff, old_val, new_val);
               strcpy(suff, suff_result);
 
+              //replace value length
               sprintf(old_val_length, "%d", it->nbytes - 2);
               sprintf(new_val_length, "%d", (int)strlen(new_val));
-
-              //value length replacement in item suffix
               suff_result = replace_str(suff, old_val_length, new_val_length);
 
               if (add_iov(c, "VALUE ", 6) != 0 ||
                 add_iov(c, ITEM_key(it), it->nkey) != 0 ||
-                add_iov(c, suff_result, it->nsuffix + it->nbytes) != 0)
+                add_iov(c, suff_result, strlen(suff_result)) != 0)
                 {
                   item_remove(it);
                   break;
                 }
               }
-
 
               if (settings.verbose > 1) {
                 int ii;
@@ -3744,7 +3712,7 @@ static inline void process_tread_command(conn *c, token_t *tokens, size_t ntoken
           reliable to add END\r\n to the buffer, because it might not end
           in \r\n. So we send SERVER_ERROR instead.
           */
-          if (key_token->value != NULL || add_iov(c, "END\r\n", 5) != 0
+          if (key_token->value != NULL || add_iov(c, "ENT\r\n", 5) != 0
             || (IS_UDP(c->transport) && build_udp_headers(c) != 0)) {
               out_of_memory(c, "SERVER_ERROR out of memory writing get response");
             }
@@ -4054,6 +4022,9 @@ static void process_command(conn *c, char *command, char **cont) {
         printf("COPIES WOY\n");
         //get item
         token_t *key_token = &tokens[KEY_TOKEN];
+
+        //temp.value tidak boleh kosong
+        //data sebelumnya harus sudah pernah diset
         temp.value = ITEM_data(item_get(key_token->value, key_token->length)); //guess: ITEM_data has allocated new memory for its return value
 
         //insert to write set
@@ -4115,6 +4086,7 @@ static void process_command(conn *c, char *command, char **cont) {
         //send copies ???
         int j = 0;
         j = get_idx(curT->copies, nelems(curT->copies), req_key);
+        printf("tread value: %s %lu\n", curT->copies[j].value, strlen(curT->copies[j].value));
         process_tread_command(c, tokens, ntokens, false, curT->copies[j].value);
       } else {
         //send from data store
@@ -4147,28 +4119,28 @@ static void process_command(conn *c, char *command, char **cont) {
         curT->tn = tnc;
       }
 
-      printf("btw.copies.avail: %d\n", curT->copies_avail);
+      //printf("btw.copies.avail: %d\n", curT->copies_avail);
       for (int i = 0; i < curT->copies_avail; i++) {
-        //printf("(%s, %s)\n", curT->copies[i].key, curT->copies[i].value);
+        printf("(%s, %s)\n", curT->copies[i].key, curT->copies[i].value);
         sprintf(command, "set %s 0 0 %lu\r\n", curT->copies[i].key, strlen(curT->copies[i].value));
 
         int sum = strlen(command);
         c->rbytes = strlen(command); //asumsi
-        //printf("rbytes harus aman: %d\n", c->rbytes);
+        printf("rbytes harus aman: %d\n", c->rbytes);
 
         char *el = memchr(command, '\r', c->rbytes);
         *el = '\0';
-        //printf("Command.Cuy ----------: %s\n", command);
+        printf("Command.Cuy ----------: %s\n", command);
         *cont = &command[strlen(command)] + 2;
         sprintf(*cont, "%s\r\n", curT->copies[i].value);
         sum += strlen(*cont);
         c->rbytes = sum;
-        //printf("cont8: %s\n", *cont);
+        printf("cont8: %s\n", *cont);
 
-        //printf("c->rcurr: %s\nc->rbuf: %s\nc->rbytes: %d\n", c->rcurr, c->rbuf, c->rbytes);
+        printf("c->rcurr: %s\nc->rbuf: %s\nc->rbytes: %d\n", c->rcurr, c->rbuf, c->rbytes);
         ntokens = tokenize_command(command, tokens, MAX_TOKENS);
-        //printf("setelah tokenize command\n");
-        //printf("c->rcurr: %s\nc->rbuf: %s\nc->rbytes: %d\n", c->rcurr, c->rbuf, c->rbytes);
+        printf("setelah tokenize command\n");
+        printf("c->rcurr: %s\nc->rbuf: %s\nc->rbytes: %d\n", c->rcurr, c->rbuf, c->rbytes);
 
         process_update_command(c, tokens, ntokens, NREAD_SET, false);
       }
@@ -4335,7 +4307,7 @@ static int try_read_command(conn *c) {
             return 0;
 
         el = memchr(c->rcurr, '\n', c->rbytes);
-        printf("el: %s\n", el);
+        printf("el: %s %lu\n", el, strlen(el));
         if (!el) {
             if (c->rbytes > 1024) {
                 /*
@@ -4366,7 +4338,7 @@ static int try_read_command(conn *c) {
         *el = '\0';
 
         assert(cont <= (c->rcurr + c->rbytes));
-        printf("cont7: %s\n", cont);
+        printf("cont7: %s %lu\n", cont, strlen(cont));
 
         c->last_cmd_time = current_time;
         process_command(c, c->rcurr, &cont);
