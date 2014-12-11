@@ -52,6 +52,7 @@
 transaction_type T[20];
 int max_trans = 20;
 int tnc = 0;
+int conn_counter = 0;
 
 #define nelems(x) (sizeof(x) / sizeof(x[0]))
 
@@ -3727,14 +3728,15 @@ static void process_tbegin_command(conn *c, token_t *tokens, size_t ntokens) {
   int new_id = c->sfd;
 
   //create new transaction
-  T[tnc].id = new_id;
-  T[tnc].start_tn = tnc;
-  T[tnc].finish_tn = 0;
-  T[tnc].rs_avail = 0;
-  T[tnc].ws_avail = 0;
-  T[tnc].copies_avail = 0;
+  T[conn_counter].id = new_id;
+  T[conn_counter].start_tn = tnc;
+  T[conn_counter].finish_tn = 0;
+  T[conn_counter].rs_avail = 0;
+  T[conn_counter].ws_avail = 0;
+  T[conn_counter].copies_avail = 0;
+  conn_counter += 1;
 
-  printf("transaction_id %d assigned\n", T[tnc].id);
+  printf("transaction_id %d assigned\n", T[conn_counter].id);
 
   //return;
   process_update_command(c, tokens, ntokens, NREAD_SET, false);
@@ -3996,6 +3998,8 @@ static void process_command(conn *c, char *command, char **cont) {
     } else if(((ntokens == 6) || (ntokens == 7)) && (strcmp(tokens[COMMAND_TOKEN].value, "tset") == 0)) {
       printf("'tset' dikenali\n");
 
+      print_transaction(T);
+
       //twrite algorithm
       int trans_id = c->sfd;
       transaction_type *curT = get_transaction(T, trans_id);
@@ -4016,8 +4020,9 @@ static void process_command(conn *c, char *command, char **cont) {
         char * token = strtok(c->req_value, "\n");
         token = strtok(NULL, "\n");
         free(c->req_value);
+
         temp.value = token;
-        curT->copies[idx] = temp;
+        curT->copies[idx] = temp; //if already in WS, already in copies
       } else {
         printf("COPIES WOY\n");
         //get item
@@ -4083,13 +4088,13 @@ static void process_command(conn *c, char *command, char **cont) {
       //send to client
       int idx = 0;
       if((idx = get_idx(curT->ws, nelems(curT->ws), req_key)) != -1) {
-        //send copies ???
-        int j = 0;
-        j = get_idx(curT->copies, nelems(curT->copies), req_key);
+        //send copies
+        int j = get_idx(curT->copies, nelems(curT->copies), req_key);
         printf("tread value: %s %lu\n", curT->copies[j].value, strlen(curT->copies[j].value));
         process_tread_command(c, tokens, ntokens, false, curT->copies[j].value);
       } else {
         //send from data store
+        printf("tread from data store yow\n");
         process_get_command(c, tokens, ntokens, false);
       }
 
@@ -4105,44 +4110,53 @@ static void process_command(conn *c, char *command, char **cont) {
 
       curT->finish_tn = tnc;
       bool valid = true;
-      for(int i = curT->start_tn + 1; i < curT->finish_tn; ++i) {
+      for(int i = curT->start_tn + 1; i <= curT->finish_tn; ++i) {
         transaction_type *tmpT = get_transaction_by_tn(T, i);
+        //intersection check
         if(isIntersect(tmpT->ws, nelems(tmpT->ws), curT->rs, nelems(curT->rs)) == 1) {
+          printf("heloooo everyone valid = false\n");
           valid = false;
         }
       }
       if(valid) {
         printf("yay valid!\n");
 
+        //write phase
+        for (int i = 0; i < curT->copies_avail; i++) { //could store only one item
+          //printf("(%s, %s)\n", curT->copies[i].key, curT->copies[i].value);
+          sprintf(command, "set %s 0 0 %lu\r\n", curT->copies[i].key, strlen(curT->copies[i].value));
+
+          int sum = strlen(command);
+          c->rbytes = strlen(command); //asumsi
+          //printf("rbytes harus aman: %d\n", c->rbytes);
+
+          char *el = memchr(command, '\r', c->rbytes);
+          *el = '\0';
+          //printf("Command.Cuy ----------: %s\n", command);
+          *cont = &command[strlen(command)] + 2;
+          sprintf(*cont, "%s\r\n", curT->copies[i].value);
+          sum += strlen(*cont);
+          c->rbytes = sum;
+          //printf("cont8: %s\n", *cont);
+
+          //printf("c->rcurr: %s\nc->rbuf: %s\nc->rbytes: %d\n", c->rcurr, c->rbuf, c->rbytes);
+          ntokens = tokenize_command(command, tokens, MAX_TOKENS);
+          //printf("setelah tokenize command\n");
+          //printf("c->rcurr: %s\nc->rbuf: %s\nc->rbytes: %d\n", c->rcurr, c->rbuf, c->rbytes);
+
+          process_update_command(c, tokens, ntokens, NREAD_SET, false);
+        }
+
         //update tnc and transaction number
         tnc += 1;
         curT->tn = tnc;
       }
 
-      //printf("btw.copies.avail: %d\n", curT->copies_avail);
-      for (int i = 0; i < curT->copies_avail; i++) {
-        printf("(%s, %s)\n", curT->copies[i].key, curT->copies[i].value);
-        sprintf(command, "set %s 0 0 %lu\r\n", curT->copies[i].key, strlen(curT->copies[i].value));
-
-        int sum = strlen(command);
-        c->rbytes = strlen(command); //asumsi
-        printf("rbytes harus aman: %d\n", c->rbytes);
-
-        char *el = memchr(command, '\r', c->rbytes);
-        *el = '\0';
-        printf("Command.Cuy ----------: %s\n", command);
-        *cont = &command[strlen(command)] + 2;
-        sprintf(*cont, "%s\r\n", curT->copies[i].value);
-        sum += strlen(*cont);
-        c->rbytes = sum;
-        printf("cont8: %s\n", *cont);
-
-        printf("c->rcurr: %s\nc->rbuf: %s\nc->rbytes: %d\n", c->rcurr, c->rbuf, c->rbytes);
-        ntokens = tokenize_command(command, tokens, MAX_TOKENS);
-        printf("setelah tokenize command\n");
-        printf("c->rcurr: %s\nc->rbuf: %s\nc->rbytes: %d\n", c->rcurr, c->rbuf, c->rbytes);
-
-        process_update_command(c, tokens, ntokens, NREAD_SET, false);
+      if(valid) {
+        //cleanup
+      } else {
+        printf("ouch not valid!\n");
+        //backup
       }
 
     } else {
@@ -4156,9 +4170,8 @@ static void process_command(conn *c, char *command, char **cont) {
   return 0 means no intersection
 */
 int isIntersect(kv_type a[], int sa, kv_type b[], int sb) {
-  int i = 0, j = 0;
-  for(i = 0; i < sa; ++i) {
-    for(j = 0; j < sb; ++j) {
+  for(int i = 0; i < sa; ++i) {
+    for(int j = 0; j < sb; ++j) {
       if(strcmp(a[i].key, b[j].key) == 0) return 1;
     }
   }
@@ -4176,13 +4189,8 @@ int get_idx(kv_type s[], int size, char *k) {
 }
 
 void print_transaction(transaction_type T[]) {
-  int i = 0;
-  for(i = 0; i < max_trans; ++i) {
+  for(int i = 0; i < max_trans; ++i) {
     printf("id ke-%d: %d\n", i, T[i].id);
-    int j = 0;
-    for(j = 0; j < 3; ++j) {
-      printf("%d: %s %s\n", j, T[i].copies[j].key, T[i].copies[j].value);
-    }
   }
 }
 
