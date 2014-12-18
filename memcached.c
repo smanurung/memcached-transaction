@@ -2950,7 +2950,7 @@ char *replace_str(char *str, char *orig, char *rep)
 }
 
 /* ntokens is overwritten here... shrug.. */
-static inline void process_get_command(conn *c, token_t *tokens, size_t ntokens, bool return_cas) {
+static inline void process_get_command(conn *c, token_t *tokens, size_t ntokens, bool return_cas, int tid) {
 	printf("ke process_get_command\n");
     char *key;
     size_t nkey;
@@ -2991,6 +2991,34 @@ static inline void process_get_command(conn *c, token_t *tokens, size_t ntokens,
                         item_remove(it);
                         break;
                     }
+                }
+
+                /*
+                 * Transaction get processing
+                 */
+
+                //allocate separate memory from tokens
+                char *request_key = malloc(tokens[KEY_TOKEN].length * sizeof(char));
+                strcpy(request_key, tokens[KEY_TOKEN].value);
+
+                //prepare transaction
+                tid = c->sfd;
+                transaction_type *curT = get_transaction(T, tid);
+                bool isTransaction = true;
+                if(!curT) {
+                  printf("TRANSAKSI NULL\n");
+                  isTransaction = false; // not transaction process
+                } else {
+                  printf("TRANSAKSI GAK NULL\n");
+                  kv_type temp;
+                  temp.key = request_key;
+                  temp.value = NULL;
+
+                  //add to readset, if not already
+                  if(get_idx(curT->rs, nelems(curT->rs), request_key) == -1) {
+                    curT->rs[curT->rs_avail] = temp;
+                    curT->rs_avail += 1;
+                  }
                 }
 
                 /*
@@ -3047,8 +3075,54 @@ static inline void process_get_command(conn *c, token_t *tokens, size_t ntokens,
                           break;
                       }
                 }
-                else
-                {
+                else if(isTransaction && ((get_idx(curT->ws, nelems(curT->ws), request_key)) != -1)) {
+
+                  MEMCACHED_COMMAND_GET(c->sfd, ITEM_key(it), it->nkey,
+                  it->nbytes, ITEM_get_cas(it));
+
+                  int idx = get_idx(curT->ws, nelems(curT->ws), request_key); //idx on copies = idx on writeset
+                  printf("tread value: %s %lu\n", curT->copies[idx].value, strlen(curT->copies[idx].value));
+
+                  /*
+                   * Custom transactional read
+                   */
+
+                  char suff[1024];
+                  char old_val[1024]; //from ITEM_data
+                  char new_val[1024];
+                  char *suff_result; //end result to put in add_iov method
+                  char old_val_length[100], new_val_length[100]; //value length in string
+
+                  strcpy(new_val, curT->copies[idx].value);
+
+                  sprintf(suff, "%s", ITEM_suffix(it));
+
+                  //get old value
+                  char *el = memchr(suff, '\n', strlen(suff));
+                  el += 1;
+                  char *zero = el + strlen(el) - 2;
+                  *zero = '\0';
+                  strcpy(old_val, el);
+                  *zero = '\r';
+
+                  //replace value in suff
+                  suff_result = replace_str(suff, old_val, new_val);
+                  strcpy(suff, suff_result);
+
+                  //replace value length
+                  sprintf(old_val_length, "%d", it->nbytes - 2);
+                  sprintf(new_val_length, "%d", (int)strlen(new_val));
+                  suff_result = replace_str(suff, old_val_length, new_val_length);
+
+                  if (add_iov(c, "VALUE ", 6) != 0 ||
+                    add_iov(c, ITEM_key(it), it->nkey) != 0 ||
+                    add_iov(c, suff_result, strlen(suff_result)) != 0)
+                  {
+                    item_remove(it);
+                    break;
+                  }
+
+                } else {
                   MEMCACHED_COMMAND_GET(c->sfd, ITEM_key(it), it->nkey,
                                         it->nbytes, ITEM_get_cas(it));
 
@@ -3782,7 +3856,7 @@ static void process_command(conn *c, char *command, char **cont) {
         ((strcmp(tokens[COMMAND_TOKEN].value, "get") == 0) ||
          (strcmp(tokens[COMMAND_TOKEN].value, "bget") == 0))) {
 
-        process_get_command(c, tokens, ntokens, false);
+        process_get_command(c, tokens, ntokens, false, -1);
 
     } else if ((ntokens == 6 || ntokens == 7) &&
                ((strcmp(tokens[COMMAND_TOKEN].value, "add") == 0 && (comm = NREAD_ADD)) ||
@@ -3806,7 +3880,7 @@ static void process_command(conn *c, char *command, char **cont) {
 
     } else if (ntokens >= 3 && (strcmp(tokens[COMMAND_TOKEN].value, "gets") == 0)) {
 
-        process_get_command(c, tokens, ntokens, true);
+        process_get_command(c, tokens, ntokens, true, -1);
 
     } else if ((ntokens == 4 || ntokens == 5) && (strcmp(tokens[COMMAND_TOKEN].value, "decr") == 0)) {
 
@@ -4024,8 +4098,7 @@ static void process_command(conn *c, char *command, char **cont) {
         temp.value = token;
         curT->copies[idx] = temp; //if already in WS, already in copies
       } else {
-        printf("COPIES WOY\n");
-        //get item
+        //printf("COPIES WOY\n");
         token_t *key_token = &tokens[KEY_TOKEN];
 
         //temp.value tidak boleh kosong
@@ -4089,13 +4162,13 @@ static void process_command(conn *c, char *command, char **cont) {
       int idx = 0;
       if((idx = get_idx(curT->ws, nelems(curT->ws), req_key)) != -1) {
         //send copies
-        int j = get_idx(curT->copies, nelems(curT->copies), req_key);
-        printf("tread value: %s %lu\n", curT->copies[j].value, strlen(curT->copies[j].value));
-        process_tread_command(c, tokens, ntokens, false, curT->copies[j].value);
+        //int j = get_idx(curT->copies, nelems(curT->copies), req_key);
+        printf("tread value: %s %lu\n", curT->copies[idx].value, strlen(curT->copies[idx].value));
+        process_tread_command(c, tokens, ntokens, false, curT->copies[idx].value);
       } else {
         //send from data store
         printf("tread from data store yow\n");
-        process_get_command(c, tokens, ntokens, false);
+        process_get_command(c, tokens, ntokens, false, trans_id);
       }
 
       free(req_key);
@@ -4204,7 +4277,7 @@ transaction_type *get_transaction_by_tn(transaction_type *T, int tn) {
 }
 
 transaction_type *get_transaction(transaction_type *T, int id) {
-  transaction_type *t;
+  transaction_type *t = NULL;
   int i = 0;
   for(i = 0; i < max_trans; ++i) {
     if(T[i].id == id) t = &T[i];
