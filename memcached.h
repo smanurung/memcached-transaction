@@ -647,6 +647,5 @@ transaction_type *get_transaction(transaction_type T[], int id);
 transaction_type *get_transaction_by_tn(transaction_type *T, int tn);
 void print_transaction(transaction_type T[]);
 int get_idx(kv_type s[], int size, char *k);
-//kv_type copy(char *key);
 char *replace_str(char *str, char *orig, char *rep);
 int isIntersect(kv_type a[], int sa, kv_type b[], int sb);

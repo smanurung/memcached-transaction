@@ -49,10 +49,11 @@
 #include <stddef.h>
 
 /* declarations for transaction */
-transaction_type T[20];
-int max_trans = 20;
+#define MAX_TRANS (20)
+transaction_type T[MAX_TRANS];
 int tnc = 0;
 int conn_counter = 0;
+int active[MAX_TRANS];
 
 #define nelems(x) (sizeof(x) / sizeof(x[0]))
 
@@ -4179,28 +4180,62 @@ static void process_command(conn *c, char *command, char **cont) {
       //retrieve current transaction
       int trans_id = c->sfd;
       transaction_type *curT = get_transaction(T, trans_id);
-      printf("curT.id = %d\n",curT->id);
+      //printf("curT.id = %d\n",curT->id);
 
       curT->finish_tn = tnc;
+
+      //copy active
+      int finish_active[MAX_TRANS];
+      for(int f = 0; f < MAX_TRANS; ++f) {
+        finish_active[f] = active[f];
+      }
+
+      //insert to active
+      for(int d = 0; d < MAX_TRANS; ++d) {
+        if(active[d] == -99) { //assumed active has enough space
+          active[d] = trans_id;
+          break;
+        }
+      }
+
       bool valid = true;
+
+      //cond 2
       for(int i = curT->start_tn + 1; i <= curT->finish_tn; ++i) {
         transaction_type *tmpT = get_transaction_by_tn(T, i);
         //intersection check
-        if(isIntersect(tmpT->ws, nelems(tmpT->ws), curT->rs, nelems(curT->rs)) == 1) {
-          printf("heloooo everyone valid = false\n");
+        if(isIntersect(tmpT->ws, nelems(tmpT->ws), curT->rs, nelems(curT->rs))) {
+          //printf("heloooo everyone valid = false\n");
           valid = false;
+          break;
         }
       }
+
+      //cond 3
+      for(int h = 0; h < MAX_TRANS; ++h) {
+        if(finish_active[h] == -99) break;
+        else {
+          transaction_type *tmp = get_transaction(T, finish_active[h]);
+          if(tmp != NULL) {
+            int res1 = isIntersect(tmp->ws, nelems(tmp->ws), curT->rs, nelems(curT->rs));
+            int res2 = isIntersect(tmp->ws, nelems(tmp->ws), curT->ws, nelems(curT->ws));
+            if(res1 || res2) {
+              valid = false;
+              break;
+            }
+          }
+        }
+      }
+
       if(valid) {
         printf("yay valid!\n");
 
         //write phase
-        for (int i = 0; i < curT->copies_avail; i++) { //could store only one item
-          //printf("(%s, %s)\n", curT->copies[i].key, curT->copies[i].value);
+        for (int i = 0; i < curT->copies_avail; i++) { //only one item
           sprintf(command, "set %s 0 0 %lu\r\n", curT->copies[i].key, strlen(curT->copies[i].value));
 
           int sum = strlen(command);
-          c->rbytes = strlen(command); //asumsi
+          c->rbytes = strlen(command);
           //printf("rbytes harus aman: %d\n", c->rbytes);
 
           char *el = memchr(command, '\r', c->rbytes);
@@ -4214,15 +4249,25 @@ static void process_command(conn *c, char *command, char **cont) {
 
           //printf("c->rcurr: %s\nc->rbuf: %s\nc->rbytes: %d\n", c->rcurr, c->rbuf, c->rbytes);
           ntokens = tokenize_command(command, tokens, MAX_TOKENS);
-          //printf("setelah tokenize command\n");
-          //printf("c->rcurr: %s\nc->rbuf: %s\nc->rbytes: %d\n", c->rcurr, c->rbuf, c->rbytes);
-
           process_update_command(c, tokens, ntokens, NREAD_SET, false);
         }
 
-        //update tnc and transaction number
+        //update tnc & tn
         tnc += 1;
         curT->tn = tnc;
+      }
+
+      //remove from active
+      for(int f = 0; f < MAX_TRANS; ++f) {
+        if(active[f] == trans_id) {
+          int h = f;
+          while(h < MAX_TRANS - 1) {
+            active[h] = active[h + 1];
+            h += 1;
+          }
+          active[h] = -99; //h == MAX_TRANS - 1
+          break;
+        }
       }
 
       if(valid) {
@@ -4233,7 +4278,7 @@ static void process_command(conn *c, char *command, char **cont) {
       }
 
     } else {
-        out_string(c, "ERROR");
+      out_string(c, "ERROR");
     }
     return;
 }
@@ -4262,15 +4307,15 @@ int get_idx(kv_type s[], int size, char *k) {
 }
 
 void print_transaction(transaction_type T[]) {
-  for(int i = 0; i < max_trans; ++i) {
+  for(int i = 0; i < MAX_TRANS; ++i) {
     printf("id ke-%d: %d\n", i, T[i].id);
   }
 }
 
 transaction_type *get_transaction_by_tn(transaction_type *T, int tn) {
-  transaction_type *t;
+  transaction_type *t = NULL;
   int i = 0;
-  for(i = 0; i < max_trans; ++i) {
+  for(i = 0; i < MAX_TRANS; ++i) {
     if(T[i].tn == tn) t = &T[i];
   }
   return t;
@@ -4279,7 +4324,7 @@ transaction_type *get_transaction_by_tn(transaction_type *T, int tn) {
 transaction_type *get_transaction(transaction_type *T, int id) {
   transaction_type *t = NULL;
   int i = 0;
-  for(i = 0; i < max_trans; ++i) {
+  for(i = 0; i < MAX_TRANS; ++i) {
     if(T[i].id == id) t = &T[i];
   }
   return t;
@@ -5787,6 +5832,9 @@ int main (int argc, char **argv) {
 
     /* set stderr non-buffering (for running under, say, daemontools) */
     setbuf(stderr, NULL);
+
+    //initialize active array
+    for(int d = 0; d < MAX_TRANS; ++d) { active[d] = -99; }
 
     /* process arguments */
     while (-1 != (c = getopt(argc, argv,
