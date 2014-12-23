@@ -4254,6 +4254,9 @@ static void process_command(conn *c, char *command, char **cont) {
         //update tnc & tn
         tnc += 1;
         curT->tn = tnc;
+      } else {
+        printf("ouch not valid\n");
+        //backup to another store
       }
 
       //remove from active
@@ -4263,21 +4266,15 @@ static void process_command(conn *c, char *command, char **cont) {
           while(h < MAX_TRANS - 1) {
             active[h] = active[h + 1];
             h += 1;
+            if(active[h] == -99) break;
           }
-          active[h] = -99; //h == MAX_TRANS - 1
+          if(h == MAX_TRANS - 1) active[h] = -99; //h == MAX_TRANS - 1
           break;
         }
       }
 
-      if(valid) {
-        //do nothing
-      } else {
-        printf("ouch not valid!\n");
-        //backup
-      }
-
       //cleanup
-
+      remove_transaction(T, trans_id);
 
     } else if (strcmp(tokens[COMMAND_TOKEN].value, "abort") == 0) {
       printf("command 'abort' dikenali\n");
