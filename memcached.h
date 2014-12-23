@@ -649,3 +649,4 @@ void print_transaction(transaction_type T[]);
 int get_idx(kv_type s[], int size, char *k);
 char *replace_str(char *str, char *orig, char *rep);
 int isIntersect(kv_type a[], int sa, kv_type b[], int sb);
+int remove_transaction(transaction_type *T, int tn);

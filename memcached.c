@@ -3811,7 +3811,8 @@ static void process_tbegin_command(conn *c, token_t *tokens, size_t ntokens) {
   T[conn_counter].copies_avail = 0;
   conn_counter += 1;
 
-  printf("transaction_id %d assigned\n", T[conn_counter].id);
+  //print_transaction(T);
+  printf("transaction_id %d assigned\n", T[conn_counter - 1].id);
 
   //return;
   process_update_command(c, tokens, ntokens, NREAD_SET, false);
@@ -4073,8 +4074,6 @@ static void process_command(conn *c, char *command, char **cont) {
     } else if(((ntokens == 6) || (ntokens == 7)) && (strcmp(tokens[COMMAND_TOKEN].value, "tset") == 0)) {
       printf("'tset' dikenali\n");
 
-      print_transaction(T);
-
       //twrite algorithm
       int trans_id = c->sfd;
       transaction_type *curT = get_transaction(T, trans_id);
@@ -4271,16 +4270,44 @@ static void process_command(conn *c, char *command, char **cont) {
       }
 
       if(valid) {
-        //cleanup
+        //do nothing
       } else {
         printf("ouch not valid!\n");
         //backup
       }
 
+      //cleanup
+
+
+    } else if (strcmp(tokens[COMMAND_TOKEN].value, "abort") == 0) {
+      printf("command 'abort' dikenali\n");
+
+      //cleanup
+      remove_transaction(T, c->sfd);
+
     } else {
       out_string(c, "ERROR");
     }
     return;
+}
+
+/*
+ * remove transaction with id 'tid'
+ */
+int remove_transaction(transaction_type *T, int tid) {
+  for(int f = 0; f < MAX_TRANS; ++f) {
+    if(T[f].id == tid) {
+      int h = f;
+      while(h < MAX_TRANS - 1) {
+        T[h] = T[h + 1];
+        h += 1;
+        if(T[h].id == -99) break;
+      }
+      if(h == MAX_TRANS - 1) T[h].id = -99;
+      break;
+    }
+  }
+  return 0;
 }
 
 /*
@@ -5833,6 +5860,8 @@ int main (int argc, char **argv) {
     /* set stderr non-buffering (for running under, say, daemontools) */
     setbuf(stderr, NULL);
 
+    //initialize transaction container
+    for(int f = 0; f < MAX_TRANS; ++f) { T[f].id = -99; }
     //initialize active array
     for(int d = 0; d < MAX_TRANS; ++d) { active[d] = -99; }
 
