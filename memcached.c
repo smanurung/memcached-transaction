@@ -5073,6 +5073,9 @@ static void drive_machine(conn *c) {
             break;
 
         case conn_closing:
+            //cleanup (crash condition)
+            remove_transaction(T, c->sfd);
+
             if (IS_UDP(c->transport))
                 conn_cleanup(c);
             else
