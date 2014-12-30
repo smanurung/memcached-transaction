@@ -4077,7 +4077,7 @@ static void process_command(conn *c, char *command, char **cont) {
       //twrite algorithm
       int trans_id = c->sfd;
       transaction_type *curT = get_transaction(T, trans_id);
-      printf("curT.id = %d\n",curT->id);
+      //printf("curT.id = %d\n",curT->id);
 
       char *k = malloc(1024*sizeof(char));
       strcpy(k, tokens[KEY_TOKEN].value);
@@ -4089,6 +4089,7 @@ static void process_command(conn *c, char *command, char **cont) {
 
       //if already within writeset
       if((idx = get_idx(curT->ws, nelems(curT->ws), k)) != -1) {
+        //fprintf(stdout, "udah pernah ditulis ya ;)\n");
 
         //write to copies
         char * token = strtok(c->req_value, "\n");
@@ -4109,20 +4110,17 @@ static void process_command(conn *c, char *command, char **cont) {
         curT->ws[curT->ws_avail] = temp;
         curT->ws_avail += 1;
 
-        //write to copies
-        //char * token = strtok(c->req_value, "\n"); //guess: strtok provided different memory space
-        //token = strtok(NULL, "\n");
-        //free(c->req_value);
-        //temp.value = token;
-
-        printf("cont: %s %lu\n", *cont, strlen(*cont));
+        //printf("cont: %s %lu\n", *cont, strlen(*cont));
         temp.value = malloc(1024*sizeof(char));
-        memcpy(temp.value, *cont, strlen(*cont) - 2);
-        printf("temp.value: %s %lu\n", temp.value, strlen(temp.value));
+
+        char *h = memchr(*cont, '\r', strlen(*cont));
+        *h = '\0';
+        strcpy(temp.value, *cont);
+        //printf("temp.value: %s %lu\n", temp.value, strlen(temp.value));
 
         curT->copies[curT->copies_avail] = temp;
-        printf("%s %lu\n", curT->copies[curT->copies_avail].key, strlen(curT->copies[curT->copies_avail].key));
-        printf("%s %lu\n", curT->copies[curT->copies_avail].value, strlen(curT->copies[curT->copies_avail].value));
+        //printf("%s %lu\n", curT->copies[curT->copies_avail].key, strlen(curT->copies[curT->copies_avail].key));
+        //printf("%s %lu\n", curT->copies[curT->copies_avail].value, strlen(curT->copies[curT->copies_avail].value));
         curT->copies_avail += 1;
       }
 
@@ -4176,6 +4174,8 @@ static void process_command(conn *c, char *command, char **cont) {
     } else if(strcmp(tokens[COMMAND_TOKEN].value, "end") == 0) {
       printf("command 'end' dikenali\n");
 
+      print_transaction(T);
+
       //retrieve current transaction
       int trans_id = c->sfd;
       transaction_type *curT = get_transaction(T, trans_id);
@@ -4202,6 +4202,8 @@ static void process_command(conn *c, char *command, char **cont) {
       //cond 2
       for(int i = curT->start_tn + 1; i <= curT->finish_tn; ++i) {
         transaction_type *tmpT = get_transaction_by_tn(T, i);
+        if(!tmpT) fprintf(stdout, "tmpT null coy\n");
+
         //intersection check
         if(isIntersect(tmpT->ws, nelems(tmpT->ws), curT->rs, nelems(curT->rs))) {
           //printf("heloooo everyone valid = false\n");
@@ -4274,7 +4276,7 @@ static void process_command(conn *c, char *command, char **cont) {
       }
 
       //cleanup
-      remove_transaction(T, trans_id);
+      //remove_transaction(T, trans_id);
 
     } else if (strcmp(tokens[COMMAND_TOKEN].value, "abort") == 0) {
       printf("command 'abort' dikenali\n");
@@ -4312,9 +4314,15 @@ int remove_transaction(transaction_type *T, int tid) {
   return 0 means no intersection
 */
 int isIntersect(kv_type a[], int sa, kv_type b[], int sb) {
+  //fprintf(stdout, "9\n");
   for(int i = 0; i < sa; ++i) {
     for(int j = 0; j < sb; ++j) {
-      if(strcmp(a[i].key, b[j].key) == 0) return 1;
+      /*fprintf(stdout, "%d %d\n", i, j);
+      if(!a[i].key) fprintf(stdout, "a null\n");
+      else fprintf(stdout, "%s\n", a[i].key);
+      if(!b[j].key) fprintf(stdout, "b null\n");
+      else fprintf(stdout, "%s\n", b[j].key);*/
+      if((a[i].key) && (b[j].key) && (strcmp(a[i].key, b[j].key) == 0)) return 1;
     }
   }
   return 0;
@@ -4347,10 +4355,10 @@ transaction_type *get_transaction_by_tn(transaction_type *T, int tn) {
 
 transaction_type *get_transaction(transaction_type *T, int id) {
   transaction_type *t = NULL;
-  int i = 0;
-  for(i = 0; i < MAX_TRANS; ++i) {
-    if(T[i].id == id) t = &T[i];
+  for(int i = 0; i < MAX_TRANS; ++i) {
+    if(T[i].id == id) { t = &T[i]; break; }
   }
+  fprintf(stdout, "t->id: %d\n", t->id);
   return t;
 }
 
