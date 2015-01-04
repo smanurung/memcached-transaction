@@ -628,16 +628,18 @@ typedef struct {
   int id; //use sfd from connection
   size_t tn; //starts from 1
 
-  kv_type rs[20];
-  kv_type ws[20];
-  kv_type copies[20];
+  kv_type rs[20]; //readset
+  kv_type ws[20]; //writeset
+  kv_type copies[20]; //latest value
 
-  int rs_avail;
+  int rs_avail; //available idx for readset
   int ws_avail;
   int copies_avail;
 
   int start_tn;
   int finish_tn;
+
+  bool state; //true if transaction still active
 
 } transaction_type;
 

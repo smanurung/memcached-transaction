@@ -49,7 +49,7 @@
 #include <stddef.h>
 
 /* declarations for transaction */
-#define MAX_TRANS (20)
+#define MAX_TRANS (100000)
 transaction_type T[MAX_TRANS];
 int tnc = 0;
 int conn_counter = 0;
@@ -3006,7 +3006,7 @@ static inline void process_get_command(conn *c, token_t *tokens, size_t ntokens,
                 tid = c->sfd;
                 transaction_type *curT = get_transaction(T, tid);
                 bool isTransaction = true;
-                if(!curT) {
+                if(!curT || !curT->state) {
                   printf("TRANSAKSI NULL\n");
                   isTransaction = false; // not transaction process
                 } else {
@@ -3799,16 +3799,15 @@ static inline void process_tread_command(conn *c, token_t *tokens, size_t ntoken
 }
 
 static void process_tbegin_command(conn *c, token_t *tokens, size_t ntokens) {
-  //use sfd as transaction_id
-  int new_id = c->sfd;
 
   //create new transaction
-  T[conn_counter].id = new_id;
+  T[conn_counter].id = c->sfd; //sfd as transaction id
   T[conn_counter].start_tn = tnc;
   T[conn_counter].finish_tn = 0;
   T[conn_counter].rs_avail = 0;
   T[conn_counter].ws_avail = 0;
   T[conn_counter].copies_avail = 0;
+  T[conn_counter].state = true;
   conn_counter += 1;
 
   //print_transaction(T);
@@ -4275,8 +4274,8 @@ static void process_command(conn *c, char *command, char **cont) {
         }
       }
 
-      //cleanup
-      //remove_transaction(T, trans_id);
+      //set transaction inactive
+      curT->state = false;
 
     } else if (strcmp(tokens[COMMAND_TOKEN].value, "abort") == 0) {
       printf("command 'abort' dikenali\n");
@@ -4340,7 +4339,7 @@ int get_idx(kv_type s[], int size, char *k) {
 
 void print_transaction(transaction_type T[]) {
   for(int i = 0; i < MAX_TRANS; ++i) {
-    printf("id ke-%d: %d\n", i, T[i].id);
+    //printf("id ke-%d: %d\n", i, T[i].id);
   }
 }
 
@@ -4358,7 +4357,7 @@ transaction_type *get_transaction(transaction_type *T, int id) {
   for(int i = 0; i < MAX_TRANS; ++i) {
     if(T[i].id == id) { t = &T[i]; break; }
   }
-  fprintf(stdout, "t->id: %d\n", t->id);
+  //fprintf(stdout, "t->id: %d\n", t->id);
   return t;
 }
 
