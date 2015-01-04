@@ -4257,7 +4257,17 @@ static void process_command(conn *c, char *command, char **cont) {
         curT->tn = tnc;
       } else {
         printf("ouch not valid\n");
-        //backup to another store
+
+        //dummy set <beginK, beginV>
+        sprintf(command, "set beginK 0 0 6\r\n");
+        c->rbytes = 26;
+        char *el = memchr(command, '\r', c->rbytes);
+        *el = '\0';
+        *cont = &command[strlen(command)] + 2;
+        strcpy(*cont, "beginV\r\n");
+
+        ntokens = tokenize_command(command, tokens, MAX_TOKENS);
+        process_update_command(c, tokens, ntokens, NREAD_SET, false);
       }
 
       //remove from active
@@ -4282,6 +4292,17 @@ static void process_command(conn *c, char *command, char **cont) {
 
       //cleanup
       remove_transaction(T, c->sfd);
+
+      //dummy set <beginK, beginV>
+      sprintf(command, "set beginK 0 0 6\r\n");
+      c->rbytes = 26;
+      char *el = memchr(command, '\r', c->rbytes);
+      *el = '\0';
+      *cont = &command[strlen(command)] + 2;
+      strcpy(*cont, "beginV\r\n");
+
+      ntokens = tokenize_command(command, tokens, MAX_TOKENS);
+      process_update_command(c, tokens, ntokens, NREAD_SET, false);
 
     } else {
       out_string(c, "ERROR");
