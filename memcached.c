@@ -4118,8 +4118,6 @@ static void process_command(conn *c, char *command, char **cont) {
         //printf("temp.value: %s %lu\n", temp.value, strlen(temp.value));
 
         curT->copies[curT->copies_avail] = temp;
-        //printf("%s %lu\n", curT->copies[curT->copies_avail].key, strlen(curT->copies[curT->copies_avail].key));
-        //printf("%s %lu\n", curT->copies[curT->copies_avail].value, strlen(curT->copies[curT->copies_avail].value));
         curT->copies_avail += 1;
       }
 
@@ -4227,7 +4225,7 @@ static void process_command(conn *c, char *command, char **cont) {
         }
       }
 
-      if(valid) {
+      if(valid && (curT->copies_avail > 0)) {
         printf("yay valid!\n");
 
         //write phase
@@ -4250,13 +4248,14 @@ static void process_command(conn *c, char *command, char **cont) {
           //printf("c->rcurr: %s\nc->rbuf: %s\nc->rbytes: %d\n", c->rcurr, c->rbuf, c->rbytes);
           ntokens = tokenize_command(command, tokens, MAX_TOKENS);
           process_update_command(c, tokens, ntokens, NREAD_SET, false);
+          printf("selesai sudah\n");
         }
 
         //update tnc & tn
         tnc += 1;
         curT->tn = tnc;
       } else {
-        printf("ouch not valid\n");
+        printf("ouch not valid or copies_avail = 0\n");
 
         //dummy set <beginK, beginV>
         sprintf(command, "set beginK 0 0 6\r\n");
